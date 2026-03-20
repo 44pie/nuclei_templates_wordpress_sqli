@@ -772,12 +772,25 @@ _check_CVE_2024_35700() {
 _check_CVE_2023_2449() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2023-2449"
     echo -e "\n${YELLOW}[${CVE}] UserPro — plaintext token${NC}"
-    if ! plugin_check "$BASE_URL" "userpro"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
-    # Try both endpoints nuclei uses (stop-at-first-match)
+    # Step 1: plugin presence check
+    # If NUCLEI_TRUST=1: nuclei already ran readme.txt check (step 1 of template) — trust it
+    # If NUCLEI_TRUST=0: verify via readme.txt ourselves
+    if [ "${NUCLEI_TRUST:-0}" != "1" ]; then
+        local README_HTTP README_BODY
+        README_HTTP=$(curl -sk -A "$UA" -o /tmp/userpro_readme_$$.txt -w "%{http_code}" \
+            -m "$TIMEOUT" "${BASE_URL}/wp-content/plugins/userpro/readme.txt" 2>/dev/null || echo 000)
+        README_BODY=$(cat /tmp/userpro_readme_$$.txt 2>/dev/null); rm -f /tmp/userpro_readme_$$.txt
+        if [ "$README_HTTP" != "200" ] || ! echo "$README_BODY" | grep -qi "userpro"; then
+            echo -e "${RED}  Plugin not found (readme: HTTP ${README_HTTP})${NC}"; return
+        fi
+    fi
+    # Step 2: endpoint check — mirrors nuclei stop-at-first-match matchers
     local RESP BODY STATUS
     RESP=$(http_probe "${BASE_URL}/wp-login.php?action=rp&key=probe&login=admin")
     BODY=$(echo "$RESP"|head -n -1); STATUS=$(echo "$RESP"|tail -1)
-    if [ "$STATUS" = "200" ] && echo "$BODY"|grep -qi "password" && ! echo "$BODY"|grep -qi "Invalid key"; then
+    # nuclei matcher: status_code==200 && body has "password" && NOT "Invalid key"
+    if [ "$STATUS" = "200" ] && echo "$BODY"|grep -qi "password" && \
+        ! echo "$BODY"|grep -qi "Invalid key"; then
         log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "wp-login rp: password reset exposed (nuclei-match)" "auth-bypass"
         return
     fi
